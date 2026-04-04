@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from '@vue/apollo-composable';
 import { ref, computed } from 'vue';
 import { provideApolloClient } from '@vue/apollo-composable';
+import { gql } from '@apollo/client';
 import { client } from '@/shared/plugins/apolloPlugin';
 
 // Ensure Apollo Client is available for composables
@@ -18,6 +19,13 @@ import {
   GET_CATEGORIES,
   GET_ME,
   GET_SHIPPING_OPTIONS
+  // Blog/Posts queries - DISABLED (No backend models)
+  // GET_LATEST_BLOG_POSTS,
+  // GET_BLOG_POSTS,
+  // GET_BLOG_POST,
+  // Location queries - DISABLED (No backend models)
+  // GET_LOCATION_INFO,
+  // GET_NEARBY_BRANCHES
 } from '@/shared/services/graphql/queries';
 
 import {
@@ -25,7 +33,9 @@ import {
   REGISTER_MUTATION,
   UPDATE_PROFILE_MUTATION,
   CHAT_WITH_AI_MUTATION,
-  CREATE_ORDER_MUTATION
+  CREATE_ORDER_MUTATION,
+  SEND_CONTACT_FORM_MUTATION,
+  SEND_QUICK_MESSAGE_MUTATION
 } from '@/shared/services/graphql/mutations';
 
 // GraphQL Query Composable
@@ -170,4 +180,82 @@ export function useCreateOrder() {
 // Shipping GraphQL Composable
 export function useShippingOptions() {
   return useGraphQLQuery(GET_SHIPPING_OPTIONS);
+}
+
+// Blog GraphQL Composables - DISABLED (No backend models)
+// export function useLatestBlogPosts(limit = 4) {
+//   return useGraphQLQuery(GET_LATEST_BLOG_POSTS, {
+//     variables: { limit }
+//   });
+// }
+
+// export function useBlogPosts(limit = 10, offset = 0) {
+//   return useGraphQLQuery(GET_BLOG_POSTS, {
+//     variables: { limit, offset }
+//   });
+// }
+
+// export function useBlogPost(slug) {
+//   return useGraphQLQuery(GET_BLOG_POST, {
+//     variables: { slug },
+//     skip: !slug
+//   });
+// }
+
+// Location GraphQL Composables - DISABLED (No backend models)
+// export function useLocationInfo() {
+//   return useGraphQLQuery(GET_LOCATION_INFO);
+// }
+
+// export function useNearbyBranches(latitude, longitude, radius = 50) {
+//   return useGraphQLQuery(GET_NEARBY_BRANCHES, {
+//     variables: { latitude, longitude, radius },
+//     skip: !latitude || !longitude
+//   });
+// }
+
+// Contact GraphQL Composables - DISABLED (No backend models)
+// export function useSendContactForm() {
+//   return useGraphQLMutation(SEND_CONTACT_FORM_MUTATION);
+// }
+
+// export function useSendQuickMessage() {
+//   return useGraphQLMutation(SEND_QUICK_MESSAGE_MUTATION);
+// }
+
+// Simple GraphQL execution composable for custom queries/mutations
+export function useGraphQL() {
+  const { execute } = useGraphQLMutation('');
+  
+  const executeQuery = async (query, variables = {}) => {
+    try {
+      const result = await client.query({
+        query: typeof query === 'string' ? gql(query) : query,
+        variables,
+        fetchPolicy: 'network-only'
+      });
+      return result;
+    } catch (error) {
+      console.error('GraphQL query error:', error);
+      throw error;
+    }
+  };
+  
+  const executeMutation = async (mutation, variables = {}) => {
+    try {
+      const result = await client.mutate({
+        mutation: typeof mutation === 'string' ? gql(mutation) : mutation,
+        variables
+      });
+      return result;
+    } catch (error) {
+      console.error('GraphQL mutation error:', error);
+      throw error;
+    }
+  };
+  
+  return {
+    executeQuery,
+    executeMutation
+  };
 }

@@ -101,3 +101,40 @@ export const CREATE_ORDER_MUTATION = gql`
     }
   }
 `;
+
+// Contact Form Mutations - Based on Django Contact Model
+export const SEND_CONTACT_FORM_MUTATION = gql`
+  mutation SendContactForm($name: String!, $email: String!, $phone: String!, $message: String!) {
+    sendContactForm(name: $name, email: $email, phone: $phone, message: $message) {
+      success
+      message
+      contact {
+        id
+        name
+        email
+        phone
+        message
+        status
+        createdAt
+      }
+    }
+  }
+`;
+
+export const SEND_QUICK_MESSAGE_MUTATION = gql`
+  mutation SendQuickMessage($name: String!, $phone: String!, $type: String!, $source: String!) {
+    sendQuickMessage(name: $name, phone: $phone, type: $type, source: $source) {
+      success
+      message
+      contact {
+        id
+        name
+        phone
+        type
+        source
+        status
+        createdAt
+      }
+    }
+  }
+`;

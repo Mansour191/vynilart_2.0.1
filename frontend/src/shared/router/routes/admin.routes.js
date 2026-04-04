@@ -10,6 +10,7 @@ export default [
       ),
     meta: {
       requiresAuth: true,
+      requiresStaff: true,
       role: 'admin',
       title: 'لوحة التحكم',
     },

@@ -21,26 +21,87 @@ export default {
       state.items = items;
       localStorage.setItem('cart', JSON.stringify(state.items));
     },
-    ADD_TO_CART(state, product) {
-      const existingItem = state.items.find(item => item.id === product.id);
+    ADD_TO_CART(state, orderItem) {
+      // Create a unique key for the item based on product, variant, and material
+      const itemKey = `${orderItem.product?.id || orderItem.productId}_${orderItem.variant?.id || 'default'}_${orderItem.material?.id || 'default'}`;
+      
+      const existingItem = state.items.find(item => 
+        item.itemKey === itemKey || 
+        (item.product?.id === orderItem.product?.id && 
+         item.variant?.id === orderItem.variant?.id && 
+         item.material?.id === orderItem.material?.id)
+      );
+      
       if (existingItem) {
-        existingItem.quantity += product.quantity || 1;
+        existingItem.quantity += orderItem.quantity || 1;
+        existingItem.totalPrice = existingItem.price * existingItem.quantity;
       } else {
-        state.items.push({
-          ...product,
-          quantity: product.quantity || 1
-        });
+        // Create proper orderitem object structure
+        const newItem = {
+          id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          itemKey,
+          product: orderItem.product || {
+            id: orderItem.productId,
+            nameAr: orderItem.nameAr || orderItem.name,
+            nameEn: orderItem.nameEn,
+            slug: orderItem.slug,
+            basePrice: orderItem.basePrice,
+            images: orderItem.images || []
+          },
+          variant: orderItem.variant || null,
+          material: orderItem.material || null,
+          quantity: orderItem.quantity || 1,
+          price: orderItem.price || orderItem.product?.basePrice || 0,
+          totalPrice: (orderItem.price || orderItem.product?.basePrice || 0) * (orderItem.quantity || 1),
+          notes: orderItem.notes || '',
+          customAttributes: orderItem.customAttributes || {},
+          addedAt: new Date().toISOString()
+        };
+        
+        state.items.push(newItem);
       }
       localStorage.setItem('cart', JSON.stringify(state.items));
     },
-    REMOVE_FROM_CART(state, productId) {
-      state.items = state.items.filter(item => item.id !== productId);
+    REMOVE_FROM_CART(state, itemKey) {
+      state.items = state.items.filter(item => item.itemKey !== itemKey && item.id !== itemKey);
       localStorage.setItem('cart', JSON.stringify(state.items));
     },
-    UPDATE_QUANTITY(state, { productId, quantity }) {
-      const item = state.items.find(item => item.id === productId);
+    UPDATE_QUANTITY(state, { itemKey, quantity }) {
+      const item = state.items.find(item => item.itemKey === itemKey || item.id === itemKey);
       if (item) {
         item.quantity = Math.max(1, quantity);
+        item.totalPrice = item.price * item.quantity;
+        localStorage.setItem('cart', JSON.stringify(state.items));
+      }
+    },
+    UPDATE_ITEM_VARIANT(state, { itemKey, variant }) {
+      const item = state.items.find(item => item.itemKey === itemKey || item.id === itemKey);
+      if (item) {
+        item.variant = variant;
+        item.price = variant.price || item.product.basePrice;
+        item.totalPrice = item.price * item.quantity;
+        item.itemKey = `${item.product.id}_${variant.id || 'default'}_${item.material?.id || 'default'}`;
+        localStorage.setItem('cart', JSON.stringify(state.items));
+      }
+    },
+    UPDATE_ITEM_MATERIAL(state, { itemKey, material }) {
+      const item = state.items.find(item => item.itemKey === itemKey || item.id === itemKey);
+      if (item) {
+        item.material = material;
+        // Update price based on material if it affects pricing
+        if (material.pricePerM2 && item.variant?.attributes?.size) {
+          // Calculate price based on material and size
+          item.price = material.pricePerM2 * parseFloat(item.variant.attributes.size);
+          item.totalPrice = item.price * item.quantity;
+        }
+        item.itemKey = `${item.product.id}_${item.variant?.id || 'default'}_${material.id || 'default'}`;
+        localStorage.setItem('cart', JSON.stringify(state.items));
+      }
+    },
+    UPDATE_ITEM_NOTES(state, { itemKey, notes }) {
+      const item = state.items.find(item => item.itemKey === itemKey || item.id === itemKey);
+      if (item) {
+        item.notes = notes;
         localStorage.setItem('cart', JSON.stringify(state.items));
       }
     },
@@ -72,14 +133,16 @@ export default {
         commit('SET_LOADING', false);
       }
     },
-    addToCart({ commit }, product) {
-      commit('ADD_TO_CART', product);
+    addToCart({ commit }, orderItem) {
+      commit('ADD_TO_CART', orderItem);
       
       // إرسال إشعار وتوست عند إضافة منتج للسلة
       import('@/shared/integration/services/NotificationService').then(service => {
+        const productName = orderItem.product?.nameAr || orderItem.nameAr || orderItem.name || 'منتج';
+        const materialName = orderItem.material?.nameAr ? ` (${orderItem.material.nameAr})` : '';
         service.default.success(
           'تمت الإضافة للسلة', 
-          `تم إضافة ${product.name || product.title} بنجاح إلى سلة التسوق الخاصة بك.`
+          `تم إضافة ${productName}${materialName} بنجاح إلى سلة التسوق الخاصة بك.`
         );
       });
 
@@ -89,8 +152,8 @@ export default {
         console.log('Syncing cart addition with server...');
       }
     },
-    removeFromCart({ commit }, productId) {
-      commit('REMOVE_FROM_CART', productId);
+    removeFromCart({ commit }, itemKey) {
+      commit('REMOVE_FROM_CART', itemKey);
       
       const authStore = useAuthStore();
       if (authStore.isAuthenticated) {
@@ -106,6 +169,27 @@ export default {
         // sync with server logic
         console.log('Syncing quantity update with server...');
       }
+    },
+    updateItemVariant({ commit }, payload) {
+      commit('UPDATE_ITEM_VARIANT', payload);
+      
+      const authStore = useAuthStore();
+      if (authStore.isAuthenticated) {
+        // sync with server logic
+        console.log('Syncing variant update with server...');
+      }
+    },
+    updateItemMaterial({ commit }, payload) {
+      commit('UPDATE_ITEM_MATERIAL', payload);
+      
+      const authStore = useAuthStore();
+      if (authStore.isAuthenticated) {
+        // sync with server logic
+        console.log('Syncing material update with server...');
+      }
+    },
+    updateItemNotes({ commit }, payload) {
+      commit('UPDATE_ITEM_NOTES', payload);
     },
     clearCart({ commit }) {
       commit('CLEAR_CART');
@@ -130,9 +214,14 @@ export default {
         const mergedCart = [...serverCart];
 
         localCart.forEach(localItem => {
-          const existingItem = mergedCart.find(item => item.id === localItem.id);
+          const existingItem = mergedCart.find(item => 
+            item.product?.id === localItem.product?.id && 
+            item.variant?.id === localItem.variant?.id && 
+            item.material?.id === localItem.material?.id
+          );
           if (existingItem) {
             existingItem.quantity += localItem.quantity;
+            existingItem.totalPrice = existingItem.price * existingItem.quantity;
           } else {
             mergedCart.push(localItem);
           }
@@ -146,12 +235,36 @@ export default {
       } finally {
         commit('SET_LOADING', false);
       }
+    },
+    // Convert cart items to order items format for checkout
+    convertToOrderItems({ state }) {
+      return state.items.map(item => ({
+        productId: item.product.id,
+        variantId: item.variant?.id,
+        materialId: item.material?.id,
+        quantity: item.quantity,
+        price: item.price,
+        notes: item.notes,
+        customAttributes: item.customAttributes
+      }));
     }
   },
   getters: {
     cartItems: state => state.items,
     cartTotalItems: state => state.items.reduce((total, item) => total + item.quantity, 0),
-    cartTotalPrice: state => state.items.reduce((total, item) => total + (item.price * item.quantity), 0),
-    isCartEmpty: state => state.items.length === 0
+    cartTotalPrice: state => state.items.reduce((total, item) => total + item.totalPrice, 0),
+    isCartEmpty: state => state.items.length === 0,
+    // Helper getters for specific use cases
+    getItemsByMaterial: (state) => (materialId) => {
+      return state.items.filter(item => item.material?.id === materialId);
+    },
+    getPremiumItems: (state) => {
+      return state.items.filter(item => item.material?.isPremium);
+    },
+    getItemsNeedingCustomWork: (state) => {
+      return state.items.filter(item => 
+        item.customAttributes && Object.keys(item.customAttributes).length > 0
+      );
+    }
   }
 };

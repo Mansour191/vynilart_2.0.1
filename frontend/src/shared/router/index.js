@@ -2,7 +2,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import routes from './routes'; // استيراد المسارات من مجلد routes
 import { useStorage } from '@vueuse/core'
-import { isAuthenticated, getCurrentUserRole } from '@/shared/plugins/apolloPlugin'
+import { useAuth } from '@/composables/useAuth'
 
 console.log('📦 المسارات القادمة من routes:', routes);
 
@@ -21,16 +21,19 @@ const router = createRouter({
 console.log('🚀 الراوتر بعد الإنشاء:', router);
 
 // High-security navigation guard
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
+  const { isAuthenticated, user } = useAuth();
+  
   // Get auth state from secure storage
   const authToken = useStorage('authToken', '')
-  const userRole = useStorage('userRole', '')
   
-  const isUserAuthenticated = !!authToken.value
-  const currentUserRole = userRole.value || 'guest'
+  const isUserAuthenticated = isAuthenticated.value || !!authToken.value
+  const currentUser = user.value
+  const currentUserRole = currentUser?.isStaff ? 'admin' : (currentUser ? 'user' : 'guest')
   
   // Check if route requires authentication
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
+  const requiresStaff = to.matched.some(record => record.meta.requiresStaff)
   const requiresAdmin = to.matched.some(record => record.meta.isAdmin)
   const requiresInvestor = to.matched.some(record => record.meta.isInvestor)
   const requiredRole = to.meta.role
@@ -40,7 +43,7 @@ router.beforeEach((to, from, next) => {
   const publicRoutes = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/getlocation']
   const isPublicRoute = publicRoutes.includes(to.path) || to.path.startsWith('/auth/') || isPublicRouteMeta
   
-  console.log(`🔐 Route Guard: ${to.path} | Auth: ${isUserAuthenticated} | Role: ${currentUserRole}`)
+  console.log(`🔐 Route Guard: ${to.path} | Auth: ${isUserAuthenticated} | Role: ${currentUserRole} | Staff: ${currentUser?.isStaff}`)
   
   // If user is not authenticated and trying to access protected route
   if (!isUserAuthenticated && !isPublicRoute) {
@@ -62,8 +65,15 @@ router.beforeEach((to, from, next) => {
   
   // Role-based access control
   if (requiresAuth && isUserAuthenticated) {
-    // Admin-only routes
-    if (requiresAdmin && currentUserRole !== 'admin') {
+    // Staff-only routes (new requiresStaff meta)
+    if (requiresStaff && !currentUser?.isStaff) {
+      console.warn('🚫 Non-staff trying to access staff route')
+      next(getRoleBasedRedirect(currentUserRole))
+      return
+    }
+    
+    // Admin-only routes (legacy isAdmin meta)
+    if (requiresAdmin && !currentUser?.isStaff) {
       console.warn('🚫 Non-admin trying to access admin route')
       next(getRoleBasedRedirect(currentUserRole))
       return

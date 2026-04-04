@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'graphene_django',
     # 'channels',  # Temporarily disabled to avoid issues
     'core',
+    'api',
 ]
 
 MIDDLEWARE = [

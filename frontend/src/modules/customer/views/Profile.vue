@@ -23,9 +23,9 @@
               <div class="avatar-wrapper">
                 <v-avatar size="120" class="avatar-circle">
                   <v-img 
-                    v-if="user && user.avatar" 
-                    :src="user.avatar" 
-                    :alt="user.firstName || user.username"
+                    v-if="user?.profile?.avatar" 
+                    :src="user.profile.avatar" 
+                    :alt="user?.firstName || user?.username"
                   />
                   <v-icon v-else size="60" color="primary">mdi-account</v-icon>
                 </v-avatar>
@@ -34,7 +34,7 @@
                   size="small"
                   class="avatar-upload-btn"
                   @click="uploadAvatar"
-                  :disabled="authStore.loading"
+                  :disabled="isLoading"
                 >
                   <v-icon>mdi-camera</v-icon>
                 </v-btn>
@@ -375,10 +375,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useAuthStore } from '@/stores/auth';
+import { useAuth } from '@/composables/useAuth';
 
 const router = useRouter();
-const authStore = useAuthStore();
+const { user, isAuthenticated, updateProfile, uploadAvatar, isLoading, error, success } = useAuth();
 
 // Reactive data
 const overlayActive = ref(true);

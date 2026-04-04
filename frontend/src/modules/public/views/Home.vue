@@ -153,7 +153,7 @@
   >
     <v-card elevation="2" class="h-100" hover>
       <v-img
-        :src="post.image"
+        :src="post.featuredImage || '/images/blog/placeholder.jpg'"
         :alt="post.title"
         height="150"
         cover
@@ -163,6 +163,9 @@
       </v-card-title>
       <v-card-text>
         <p class="text-medium-emphasis">{{ post.excerpt }}</p>
+        <small class="text-caption text-medium-emphasis">
+          {{ new Date(post.publishedAt).toLocaleDateString() }}
+        </small>
       </v-card-text>
       <v-card-actions>
         <v-btn
@@ -192,15 +195,16 @@
 import { ref, computed, onMounted, onErrorCaptured } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
+import { useRouter } from 'vue-router';
 import HeroSlider from '@/shared/components/HeroSlider.vue';
 import GoogleMap from '@/shared/components/GoogleMap.vue';
 import ContactForm from '@/shared/components/common/ContactForm.vue';
 import ProductCard from '@/shared/components/ProductCard.vue';
-import BlogService from '@/integration/services/BlogService';
-import { useProducts } from '@/composables/useGraphQL';
+import { useProducts } from '@/shared/composables/useGraphQL';
 
 const { t, locale } = useI18n();
 const store = useStore();
+const router = useRouter();
 
 // Error boundary state
 const hasCriticalError = ref(false);
@@ -244,11 +248,6 @@ const initializeProducts = () => {
 };
 
 const { products: featuredProducts, loading: loadingProducts, error: productsError, fetchProducts } = initializeProducts();
-
-// Posts State (keep BlogService as is)
-const posts = ref([]);
-const loadingPosts = ref(true);
-const postsError = ref(null);
 
 const isAuthenticated = computed(() => store.getters['auth/isAuthenticated']);
 
@@ -303,25 +302,45 @@ const retryLoading = () => {
   }
 };
 
-const fetchLatestPosts = async () => {
-  // Prevent duplicate requests
-  if (loadingPosts.value) {
-    console.log('⏳ Posts fetch already in progress, skipping...');
-    return;
+
+// Blog State - DISABLED (No backend models)
+const posts = ref([]);
+const loadingPosts = ref(false);
+const postsError = ref(null);
+
+// Mock blog posts for display
+const mockPosts = [
+  {
+    id: 1,
+    title: 'مرحباً بك في فينيل آرت',
+    excerpt: 'نحن متخصصون في فن الفينيل والأعمال الفنية',
+    featuredImage: '/images/blog/placeholder.jpg',
+    publishedAt: '2024-01-15'
+  },
+  {
+    id: 2,
+    title: 'أحدث منتجاتنا',
+    excerpt: 'استكشف تشكيلة جديدة من الفينيل الفاخر',
+    featuredImage: '/images/blog/placeholder.jpg',
+    publishedAt: '2024-01-10'
   }
-  
+];
+
+const fetchLatestPosts = async () => {
+  // Simulate loading for demo purposes
   loadingPosts.value = true;
   postsError.value = null;
+  
   try {
-    posts.value = await BlogService.getLatestPosts(4);
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    posts.value = mockPosts;
   } catch (err) {
     postsError.value = err.message;
   } finally {
     loadingPosts.value = false;
   }
 };
-
-const fetchFeaturedProducts = async () => {
   // Prevent duplicate requests
   if (loadingProducts.value) {
     console.log('⏳ Products fetch already in progress, skipping...');
@@ -339,11 +358,12 @@ const fetchFeaturedProducts = async () => {
   }
 };
 
-// Fetch data on mount - SIMPLIFIED
+// Fetch data on mount
 onMounted(() => {
-  // useProducts composable already handles automatic fetching
-  // No need for manual fetchFeaturedProducts call
-  fetchLatestPosts(); // Only fetch posts manually
+  // useProducts composable handles automatic fetching
+  // fetchLatestPosts for demo blog posts
+  fetchLatestPosts();
+  console.log('🏠 Home component mounted - GraphQL ready');
 });
 </script>
 

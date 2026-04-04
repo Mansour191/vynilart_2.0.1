@@ -79,7 +79,7 @@
                           required
                         />
                       </v-col>
-                      <v-col cols="12" sm="8">
+                      <v-col cols="12">
                         <v-text-field
                           v-model="form.address"
                           :label="$t('address')"
@@ -88,19 +88,18 @@
                           required
                         />
                       </v-col>
-                      <v-col cols="12" sm="4">
-                        <v-select
-                          v-model="form.wilaya"
-                          :label="$t('wilaya') || 'الولاية'"
-                          :items="wilayas"
-                          item-title="name"
-                          item-value="id"
-                          variant="outlined"
-                          :rules="[v => !!v || 'هذا الحقل مطلوب']"
-                          required
-                        />
-                      </v-col>
                     </v-row>
+
+                    <!-- Shipping Selection -->
+                    <v-divider class="my-4" />
+                    
+                    <div class="shipping-selection mb-4">
+                      <ShippingSelector
+                        :order-total="subtotal"
+                        @shipping-selected="onShippingSelected"
+                        @price-change="onShippingPriceChange"
+                      />
+                    </div>
 
                     <!-- Payment Method -->
                     <v-divider class="my-4" />
@@ -109,22 +108,100 @@
                     
                     <v-radio-group v-model="form.paymentMethod" class="payment-methods">
                       <v-radio 
-                        v-for="method in paymentMethods" 
-                        :key="method.value"
-                        :value="method.value"
+                        v-for="method in activePaymentMethods" 
+                        :key="method.id"
+                        :value="method.id"
                         class="payment-option"
                       >
                         <template v-slot:label>
                           <div class="d-flex align-center">
-                            <v-icon :icon="method.icon" class="me-3" />
+                            <v-icon :icon="method.display_icon" class="me-3" />
                             <div>
-                              <div class="text-body-1">{{ method.label }}</div>
-                              <div class="text-caption text-medium-emphasis">{{ method.description }}</div>
+                              <div class="text-body-1">{{ method.name }}</div>
+                              <div class="text-caption text-medium-emphasis">{{ getPaymentTypeLabel(method.payment_type) }}</div>
                             </div>
+                            <v-tooltip
+                              v-if="method.instructions"
+                              :text="method.instructions"
+                              location="top"
+                            >
+                              <template v-slot:activator="{ props }">
+                                <v-btn
+                                  v-bind="props"
+                                  icon="mdi-information"
+                                  size="small"
+                                  variant="text"
+                                  color="primary"
+                                  class="ms-2"
+                                ></v-btn>
+                              </template>
+                            </v-tooltip>
                           </div>
                         </template>
                       </v-radio>
                     </v-radio-group>
+
+                    <!-- Coupon Section -->
+                    <v-divider class="my-4" />
+                    
+                    <div class="coupon-section mb-4">
+                      <h6 class="text-h6 mb-3">{{ $t('haveCouponCode') || 'هل لديك كود خصم؟' }}</h6>
+                      
+                      <div class="d-flex ga-2">
+                        <v-text-field
+                          v-model="couponCode"
+                          :label="$t('couponCode') || 'كود الخصم'"
+                          variant="outlined"
+                          prepend-inner-icon="mdi-ticket-percent"
+                          :loading="validatingCoupon"
+                          :error-messages="couponError"
+                          :success-messages="couponSuccess"
+                          @keyup.enter="applyCoupon"
+                          clearable
+                        ></v-text-field>
+                        
+                        <v-btn
+                          color="primary"
+                          variant="elevated"
+                          :loading="validatingCoupon"
+                          :disabled="!couponCode || validatingCoupon"
+                          @click="applyCoupon"
+                          height="56"
+                        >
+                          {{ $t('applyCoupon') || 'تطبيق' }}
+                        </v-btn>
+                      </div>
+                      
+                      <!-- Applied Coupon Display -->
+                      <v-card
+                        v-if="appliedCoupon"
+                        variant="tonal"
+                        color="success"
+                        class="mt-3"
+                      >
+                        <v-card-text class="pa-3">
+                          <div class="d-flex align-center justify-space-between">
+                            <div class="d-flex align-center ga-2">
+                              <v-icon color="success">mdi-check-circle</v-icon>
+                              <div>
+                                <div class="text-body-2 font-weight-medium">
+                                  {{ $t('couponApplied') || 'تم تطبيق الكوبون' }}
+                                </div>
+                                <div class="text-caption">
+                                  {{ appliedCoupon.code }} - {{ formatCurrency(appliedCoupon.discount_amount) }}
+                                </div>
+                              </div>
+                            </div>
+                            <v-btn
+                              icon="mdi-close"
+                              size="small"
+                              variant="text"
+                              @click="removeCoupon"
+                            ></v-btn>
+                          </div>
+                        </v-card-text>
+                      </v-card>
+                    </div>
 
                     <!-- Order Notes -->
                     <v-divider class="my-4" />
@@ -269,11 +346,24 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useStore } from 'vuex'
+import ShippingSelector from '@/shared/components/ShippingSelector.vue'
+import { useShipping } from '@/composables/useShipping'
+import { useAuth } from '@/composables/useAuth'
 import { useAuthStore } from '@/store/auth'
-import CartService from '@/integration/services/CartService'
-import CheckoutService from '@/integration/services/CheckoutService'
-import AddressService from '@/integration/services/AddressService'
-import NotificationService from '@/integration/services/NotificationService'
+import { useAppConfig } from '@/composables/useAppConfig';
+import CartService from '@/shared/services/CartService';
+import ShippingService from '@/shared/services/ShippingService';
+import NotificationService from '@/shared/services/NotificationService';
+import { useGraphQL } from '@/shared/composables/useGraphQL';
+
+const { activePaymentMethods, fetchPaymentMethods } = useAppConfig();
+const { executeQuery, executeMutation } = useGraphQL();
+
+// Composables
+const store = useStore();
+const { validateShippingSelection } = useShipping();
+const { user, isAuthenticated } = useAuth();
 
 // Reactive data
 const overlayActive = ref(true);
@@ -282,6 +372,14 @@ const formValid = ref(false);
 const checkoutForm = ref(null);
 const cartItems = ref([]);
 const router = useRouter();
+const selectedShipping = ref(null);
+
+// Coupon related data
+const couponCode = ref('');
+const validatingCoupon = ref(false);
+const couponError = ref('');
+const couponSuccess = ref('');
+const appliedCoupon = ref(null);
 
 const form = ref({
   firstName: '',
@@ -289,7 +387,7 @@ const form = ref({
   email: '',
   phone: '',
   address: '',
-  wilaya: '',
+  wilaya: '', // Will be set from shipping selection
   paymentMethod: 'cash_on_delivery',
   notes: ''
 });
@@ -306,16 +404,20 @@ const subtotal = computed(() => {
 });
 
 const shippingCost = computed(() => {
-  return subtotal.value > 15000 ? 0 : 800;
+  return selectedShipping.value ? selectedShipping.value.shippingCost : 0;
 });
 
-const discountAmount = computed(() => {
+const discountAmountOriginal = computed(() => {
   return cartItems.value.reduce((sum, item) => {
     if (item.originalPrice) {
       return sum + ((item.originalPrice - item.price) * item.quantity);
     }
     return sum;
   }, 0);
+});
+
+const discountAmount = computed(() => {
+  return appliedCoupon.value ? appliedCoupon.value.discount_amount : 0;
 });
 
 const total = computed(() => {
@@ -447,8 +549,29 @@ const loadCart = async () => {
   }
 };
 
+const getPaymentTypeLabel = (type) => {
+  const labels = {
+    'cash': t('cashOnDelivery') || 'الدفع عند الاستلام',
+    'bank_transfer': t('bankTransfer') || 'تحويل بنكي',
+    'wallet': t('electronicWallet') || 'محفظة إلكترونية',
+    'card': t('creditCard') || 'بطاقة بنكية',
+    'other': t('other') || 'أخرى'
+  };
+  return labels[type] || type;
+};
+
 const submitOrder = async () => {
   if (!formValid.value) return;
+  
+  // Validate shipping selection
+  const shippingValidation = validateShippingSelection();
+  if (!shippingValidation.isValid) {
+    NotificationService.error(
+      'خطأ في الشحن',
+      shippingValidation.message
+    );
+    return;
+  }
   
   submitting.value = true;
   try {
@@ -461,11 +584,17 @@ const submitOrder = async () => {
       },
       shipping: {
         address: form.value.address,
-        wilaya: form.value.wilaya
+        wilaya: form.value.wilaya,
+        deliveryType: selectedShipping.value?.deliveryType || 'home_delivery',
+        estimatedDelivery: selectedShipping.value?.estimatedDays || '2-3 أيام'
       },
       payment: {
         method: form.value.paymentMethod
       },
+      coupon: appliedCoupon.value ? {
+        code: appliedCoupon.value.code,
+        discount_amount: appliedCoupon.value.discount_amount
+      } : null,
       items: cartItems.value.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -515,18 +644,103 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
+// Coupon methods
+const applyCoupon = async () => {
+  if (!couponCode.value) return;
+  
+  validatingCoupon.value = true;
+  couponError.value = '';
+  couponSuccess.value = '';
+  
+  try {
+    const mutation = `
+      mutation ApplyCoupon($input: ApplyCouponInput!) {
+        applyCoupon(input: $input) {
+          success
+          message
+          coupon {
+            id
+            code
+            name
+            discount_type
+            discount_value
+            formatted_discount
+          }
+          discount_amount
+        }
+      }
+    `;
+    
+    const variables = {
+      input: {
+        code: couponCode.value,
+        order_value: subtotal.value
+      }
+    };
+    
+    const response = await executeMutation(mutation, variables);
+    
+    if (response?.data?.applyCoupon?.success) {
+      appliedCoupon.value = {
+        ...response.data.applyCoupon.coupon,
+        discount_amount: response.data.applyCoupon.discount_amount
+      };
+      couponSuccess.value = response.data.applyCoupon.message;
+      couponCode.value = '';
+    } else {
+      couponError.value = response?.data?.applyCoupon?.message || 'فشل تطبيق الكوبون';
+    }
+  } catch (error) {
+    console.error('Error applying coupon:', error);
+    couponError.value = error.message || 'حدث خطأ أثناء تطبيق الكوبون';
+  } finally {
+    validatingCoupon.value = false;
+  }
+};
+
+const removeCoupon = () => {
+  appliedCoupon.value = null;
+  couponError.value = '';
+  couponSuccess.value = '';
+};
+
+// Shipping event handlers
+const onShippingSelected = (shippingInfo) => {
+  selectedShipping.value = shippingInfo;
+  form.value.wilaya = shippingInfo.wilayaId;
+  console.log('✅ Shipping selected:', shippingInfo);
+};
+
+const onShippingPriceChange = (newTotal) => {
+  // Total will be automatically recalculated
+  console.log('💰 Shipping price changed, new total:', newTotal);
+};
+
+const populateFormWithUserData = () => {
+  if (isAuthenticated.value && user.value) {
+    // Populate form with user profile data
+    form.value.firstName = user.value.firstName || '';
+    form.value.lastName = user.value.lastName || '';
+    form.value.email = user.value.email || '';
+    form.value.phone = user.value.profile?.phone || '';
+    form.value.address = user.value.profile?.address || '';
+    
+    console.log('✅ Form populated with user data:', user.value);
+  }
+};
+
 // Lifecycle
 onMounted(async () => {
   await Promise.all([
-    loadCart(),
+    fetchPaymentMethods(),
     fetchWilayas(),
-    fetchPaymentMethods()
+    loadCart()
   ]);
-  
   if (cartItems.value.length === 0) {
     router.push('/shop');
   }
 });
+
 </script>
 
 <style scoped>

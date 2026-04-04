@@ -415,8 +415,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import LocationService from '@/integration/services/LocationService';
-import ContactService from '@/integration/services/ContactService';
+import { useLocationInfo, useNearbyBranches, useSendQuickMessage } from '@/shared/composables/useGraphQL';
 
 // إصلاح مشكلة أيقونات Leaflet في Vue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -907,18 +906,31 @@ const initMap = () => {
 };
 
 // --- Data Fetching & Actions ---
+const { 
+  data: locationData, 
+  loading: locationLoading, 
+  error: locationError 
+} = useLocationInfo();
+
+const { 
+  data: branchesData, 
+  loading: branchesLoading, 
+  error: branchesError 
+} = useNearbyBranches(OFFICE_LOCATION.lat, OFFICE_LOCATION.lng, 50);
+
+const { 
+  execute: sendQuickMessage, 
+  loading: sending, 
+  error: messageError 
+} = useSendQuickMessage();
+
+// Computed properties
+const loading = computed(() => locationLoading.value || branchesLoading.value);
+const nearbyBranches = computed(() => branchesData?.nearbyBranches || []);
+
 const loadLocationData = async () => {
-  try {
-    loading.value = true;
-    const locationResponse = await LocationService.getLocationInfo();
-    if (locationResponse.success) locationData.value = locationResponse.data;
-    const branchesResponse = await LocationService.getNearbyBranches({ lat: OFFICE_LOCATION.lat, lng: OFFICE_LOCATION.lng }, 50);
-    if (branchesResponse.success) nearbyBranches.value = branchesResponse.data;
-  } catch (error) {
-    console.error('❌ Error loading location data:', error);
-  } finally {
-    loading.value = false;
-  }
+  // GraphQL composables handle automatic data fetching
+  console.log('📍 Location data loaded via GraphQL');
 };
 
 const openDirections = () => {
@@ -946,19 +958,30 @@ const shareLocation = async () => {
 
 const sendQuickMessage = async () => {
   if (!isFormValid.value) return;
-  sending.value = true;
+  
   try {
-    const response = await ContactService.sendQuickMessage({
-      name: quickForm.name, phone: quickForm.phone, type: 'quick_contact', source: 'location_page'
+    // Use GraphQL mutation
+    const result = await sendQuickMessage({
+      name: quickForm.name, 
+      phone: quickForm.phone, 
+      type: 'quick_contact', 
+      source: 'location_page'
     });
-    if (response.success) {
+    
+    if (result?.sendQuickMessage?.success) {
+      // Reset form
       quickForm.name = '';
       quickForm.phone = '';
+      showQuickForm.value = false;
+      
+      // Show success message
+      alert('تم إرسال رسالتك بنجاح!');
+    } else {
+      alert('فشل إرسال الرسالة. يرجى المحاولة مرة أخرى.');
     }
   } catch (error) {
-    console.error('❌ Error sending message:', error);
-  } finally {
-    sending.value = false;
+    console.error('❌ Error sending quick message:', error);
+    alert('حدث خطأ أثناء إرسال الرسالة. يرجى المحاولة مرة أخرى.');
   }
 };
 

@@ -1,0 +1,754 @@
+import { gql } from '@apollo/client';
+
+// Product by ID with full relationships
+export const PRODUCT_BY_ID_QUERY = gql`
+  query GetProductById($id: ID!) {
+    product(id: $id) {
+      id
+      nameAr
+      nameEn
+      slug
+      descriptionAr
+      descriptionEn
+      basePrice
+      cost
+      category {
+        id
+        nameAr
+        nameEn
+        slug
+        icon
+        image
+      }
+      onSale
+      discountPercent
+      isFeatured
+      isNew
+      isActive
+      stock
+      weight
+      dimensions
+      tags
+      seoTitle
+      seoDescription
+      syncStatus
+      erpnextItemCode
+      syncError
+      lastSyncedAt
+      createdAt
+      updatedAt
+      images {
+        id
+        imageUrl
+        altText
+        isMain
+        sortOrder
+        createdAt
+      }
+      variants {
+        id
+        name
+        sku
+        price
+        stock
+        attributes
+        isActive
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
+// Product by Slug with full relationships
+export const PRODUCT_BY_SLUG_QUERY = gql`
+  query GetProductBySlug($slug: String!) {
+    products(filter: { slug: $slug }) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+            image
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          syncStatus
+          erpnextItemCode
+          syncError
+          lastSyncedAt
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+            createdAt
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+            createdAt
+            updatedAt
+          }
+          available_materials {
+            id
+            isActive
+            createdAt
+            updatedAt
+            material {
+              id
+              nameAr
+              nameEn
+              description
+              pricePerM2
+              isPremium
+              isActive
+              image
+              properties
+              createdAt
+              updatedAt
+            }
+          }
+        }
+        cursor
+      }
+    }
+  }
+`;
+
+// All Products with pagination and filtering
+export const ALL_PRODUCTS_QUERY = gql`
+  query GetAllProducts($filter: ProductsFilterInput, $first: Int, $after: String, $orderBy: String) {
+    products(filter: $filter, first: $first, after: $after, orderBy: $orderBy) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+// Active Products Only
+export const ACTIVE_PRODUCTS_QUERY = gql`
+  query GetActiveProducts($filter: ProductsFilterInput, $first: Int, $after: String, $orderBy: String) {
+    products(
+      filter: { isActive: true, ...$filter }
+      first: $first
+      after: $after
+      orderBy: $orderBy
+    ) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+// Featured Products
+export const FEATURED_PRODUCTS_QUERY = gql`
+  query GetFeaturedProducts($first: Int, $after: String) {
+    products(
+      filter: { isActive: true, isFeatured: true }
+      first: $first
+      after: $after
+      orderBy: "-createdAt"
+    ) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+// New Products
+export const NEW_PRODUCTS_QUERY = gql`
+  query GetNewProducts($first: Int, $after: String) {
+    products(
+      filter: { isActive: true, isNew: true }
+      first: $first
+      after: $after
+      orderBy: "-createdAt"
+    ) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+// Products by Category
+export const PRODUCTS_BY_CATEGORY_QUERY = gql`
+  query GetProductsByCategory($categoryId: ID!, $first: Int, $after: String, $orderBy: String) {
+    products(
+      filter: { category: $categoryId, isActive: true }
+      first: $first
+      after: $after
+      orderBy: $orderBy
+    ) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+// Products on Sale
+export const PRODUCTS_ON_SALE_QUERY = gql`
+  query GetProductsOnSale($first: Int, $after: String) {
+    products(
+      filter: { isActive: true, onSale: true }
+      first: $first
+      after: $after
+      orderBy: "-discountPercent"
+    ) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
+// Search Products
+export const SEARCH_PRODUCTS_QUERY = gql`
+  query SearchProducts($searchTerm: String!, $first: Int, $after: String, $filter: ProductsFilterInput) {
+  products(
+    filter: { 
+      nameAr_Icontains: $searchTerm, 
+      nameEn_Icontains: $searchTerm,
+      descriptionAr_Icontains: $searchTerm,
+      descriptionEn_Icontains: $searchTerm,
+      isActive: true,
+      ...$filter
+    }, 
+    first: $first
+    after: $after
+    orderBy: "-createdAt"
+  ) {
+    edges {
+      node {
+        id
+        nameAr
+        nameEn
+        slug
+        descriptionAr
+        descriptionEn
+        basePrice
+        cost
+        category {
+          id
+          nameAr
+          nameEn
+          slug
+          icon
+        }
+        onSale
+        discountPercent
+        isFeatured
+        isNew
+        isActive
+        stock
+        weight
+        dimensions
+        tags
+        seoTitle
+        seoDescription
+        createdAt
+        updatedAt
+        images {
+          id
+          imageUrl
+          altText
+          isMain
+          sortOrder
+        }
+        variants {
+          id
+          name
+          sku
+          price
+          stock
+          attributes
+          isActive
+        }
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    totalCount
+  }
+}
+`;
+
+// Related Products (same category)
+export const RELATED_PRODUCTS_QUERY = gql`
+  query GetRelatedProducts($categoryId: ID!, $productId: ID!, $first: Int) {
+    products(
+      filter: { 
+        category: $categoryId, 
+        isActive: true 
+      }
+      first: $first
+      orderBy: "-createdAt"
+    ) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          descriptionAr
+          descriptionEn
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          seoTitle
+          seoDescription
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+    }
+  }
+`;
+
+// Products with Stock Information
+export const PRODUCTS_WITH_STOCK_QUERY = gql`
+  query GetProductsWitStock($filter: ProductsFilterInput, $first: Int, $after: String) {
+    products(filter: $filter, first: $first, after: $after) {
+      edges {
+        node {
+          id
+          nameAr
+          nameEn
+          slug
+          basePrice
+          cost
+          category {
+            id
+            nameAr
+            nameEn
+            slug
+            icon
+          }
+          onSale
+          discountPercent
+          isFeatured
+          isNew
+          isActive
+          stock
+          weight
+          dimensions
+          tags
+          createdAt
+          updatedAt
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+            sortOrder
+          }
+          variants {
+            id
+            name
+            sku
+            price
+            stock
+            attributes
+            isActive
+          }
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;

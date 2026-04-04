@@ -1,5 +1,23 @@
 <template>
-  <div class="users-manager">
+  <div v-if="!canAccessUsersManager" class="access-denied">
+    <v-alert
+      type="error"
+      prominent
+      class="mb-4"
+    >
+      <v-alert-title>الوصول مرفوض</v-alert-title>
+      <div>ليس لديك صلاحية للوصول إلى صفحة إدارة المستخدمين.</div>
+      <v-btn
+        color="white"
+        variant="outlined"
+        class="mt-3"
+        @click="router.push('/dashboard')"
+      >
+        العودة إلى لوحة التحكم
+      </v-btn>
+    </v-alert>
+  </div>
+  <div v-else class="users-manager">
     <!-- Header Section -->
     <div class="users-header">
       <div class="header-content">
@@ -9,10 +27,12 @@
         </div>
         <div class="header-right">
           <v-btn
+            v-can="'auth.add_user'"
             color="primary"
             prepend-icon="mdi-plus"
             @click="showAddUserDialog = true"
             class="add-user-btn"
+            :title="canManageUsers ? 'إضافة مستخدم جديد' : 'ليس لديك صلاحية إضافة مستخدمين'"
           >
             إضافة مستخدم
           </v-btn>
@@ -79,8 +99,28 @@
         </div>
       </div>
 
+      <!-- Error State -->
+      <div v-if="error" class="error-state">
+        <v-alert
+          type="error"
+          prominent
+          class="mb-4"
+        >
+          <v-alert-title>خطأ في جلب البيانات</v-alert-title>
+          <div>{{ error.message }}</div>
+          <v-btn
+            color="white"
+            variant="outlined"
+            class="mt-3"
+            @click="fetchUsers"
+          >
+            إعادة المحاولة
+          </v-btn>
+        </v-alert>
+      </div>
+
       <!-- Users Table -->
-      <div class="users-table-section">
+      <div v-else class="users-table-section">
         <v-data-table
           :headers="tableHeaders"
           :items="filteredUsers"
@@ -99,7 +139,26 @@
           <template v-slot:item.name="{ item }">
             <div class="user-info">
               <div class="user-name">{{ item.name }}</div>
-              <div class="user-email">{{ item.email }}</div>
+            </div>
+          </template>
+
+          <template v-slot:item.email="{ item }">
+            <div class="user-email">
+              {{ item.email || 'لا يوجد' }}
+            </div>
+          </template>
+
+          <template v-slot:item.phone="{ item }">
+            <div class="user-phone">
+              {{ item.phone || 'لا يوجد' }}
+            </div>
+          </template>
+
+          <template v-slot:item.address="{ item }">
+            <div class="user-address">
+              <div class="address-text">
+                {{ item.address || 'لا يوجد عنوان' }}
+              </div>
             </div>
           </template>
 
@@ -109,8 +168,41 @@
               size="small"
               variant="flat"
             >
+              <v-icon start :icon="item.role === 'admin' ? 'mdi-account-tie' : 'mdi-account'"></v-icon>
               {{ getRoleLabel(item.role) }}
             </v-chip>
+          </template>
+
+          <template v-slot:item.groups="{ item }">
+            <div class="user-groups">
+              <v-select
+                v-can="'auth.change_permission'"
+                v-model="item.selectedGroups"
+                :items="groups"
+                item-title="name"
+                item-value="id"
+                label="اختر مجموعة"
+                variant="outlined"
+                density="compact"
+                hide-details
+                multiple
+                chips
+                size="small"
+                @update:model-value="(value) => handleGroupChange(item, value)"
+                :loading="loading"
+                :disabled="!canManageUsers"
+                :title="canManageUsers ? 'تعديل مجموعات المستخدم' : 'ليس لديك صلاحية تعديل مجموعات المستخدمين'"
+              >
+                <template v-slot:selection="{ item, index }">
+                  <v-chip v-if="index < 2" size="small" variant="flat">
+                    {{ item.name }}
+                  </v-chip>
+                  <span v-if="index === 2" class="text-grey text-caption align-self-center">
+                    (+{{ item.selectedGroups.length - 2 }} آخرين)
+                  </span>
+                </template>
+              </v-select>
+            </div>
           </template>
 
           <template v-slot:item.status="{ item }">
@@ -144,19 +236,33 @@
                 class="action-btn"
               ></v-btn>
               <v-btn
+                v-can="'auth.change_permission'"
                 icon="mdi-pencil"
                 size="small"
                 variant="text"
                 @click="editUser(item)"
                 class="action-btn"
+                :title="canManageUsers ? 'تعديل المستخدم' : 'ليس لديك صلاحية تعديل المستخدمين'"
               ></v-btn>
               <v-btn
+                v-can="'auth.change_permission'"
+                :icon="item.active ? 'mdi-account-off' : 'mdi-account-check'"
+                size="small"
+                :variant="item.active ? 'text' : 'text'"
+                :color="item.active ? 'warning' : 'success'"
+                @click="handleToggleUserStatus(item)"
+                class="action-btn"
+                :title="item.active ? 'تعطيل الحساب' : 'تفعيل الحساب'"
+              ></v-btn>
+              <v-btn
+                v-can="'auth.delete_user'"
                 icon="mdi-delete"
                 size="small"
                 variant="text"
                 color="error"
                 @click="deleteUser(item)"
                 class="action-btn"
+                :title="canManageUsers ? 'حذف المستخدم' : 'ليس لديك صلاحية حذف المستخدمين'"
               ></v-btn>
             </div>
           </template>
@@ -332,13 +438,48 @@
 import { ref, computed, onMounted } from 'vue';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
+import { useUsers } from '@/composables/useUsers';
+import { useAuth } from '@/composables/useAuth';
+import { vCan } from '@/shared/directives/permissionDirective';
 
 const store = useStore();
 const { t } = useI18n();
+const router = useRouter();
+
+// Auth composable for permission checks
+const { user, isAdmin, canManageUsers } = useAuth();
+
+// Use users composable
+const {
+  users,
+  groups,
+  userStats,
+  loading,
+  error,
+  fetchUsers,
+  fetchGroups,
+  toggleUserStatus,
+  assignUserToGroup,
+  removeUserFromGroup,
+  isUserInGroup,
+  hasPermission,
+  getRoleColor,
+  getRoleLabel,
+  formatDate
+} = useUsers();
+
+// Security check - only allow admin users
+const canAccessUsersManager = computed(() => {
+  return isAdmin.value;
+});
+
+// Redirect if not admin
+if (!canAccessUsersManager.value) {
+  router.push('/dashboard');
+}
 
 // Reactive data
-const loading = ref(false);
-const users = ref([]);
 const searchQuery = ref('');
 const selectedFilters = ref([]);
 const showAddUserDialog = ref(false);
@@ -357,15 +498,18 @@ const userForm = ref({
   email: '',
   phone: '',
   role: '',
+  groups: '',
   password: '',
   active: true
 });
-
-// Table headers
 const tableHeaders = [
   { title: 'الصورة', key: 'avatar', sortable: false },
   { title: 'الاسم', key: 'name' },
+  { title: 'البريد الإلكتروني', key: 'email' },
+  { title: 'الهاتف', key: 'phone', sortable: false },
+  { title: 'العنوان', key: 'address', sortable: false },
   { title: 'الدور', key: 'role' },
+  { title: 'المجموعة', key: 'groups', sortable: false },
   { title: 'الحالة', key: 'status' },
   { title: 'آخر تسجيل دخول', key: 'last_login' },
   { title: 'الإجراءات', key: 'actions', sortable: false }
@@ -417,88 +561,34 @@ const filteredUsers = computed(() => {
   return filtered;
 });
 
-const userStats = computed(() => [
-  {
-    label: 'إجمالي المستخدمين',
-    value: users.value.length,
-    icon: 'mdi-account-group',
-    color: '#2196f3',
-    trend: 12
-  },
-  {
-    label: 'مستخدمين نشطين',
-    value: users.value.filter(u => u.active).length,
-    icon: 'mdi-account-check',
-    color: '#4caf50',
-    trend: 8
-  },
-  {
-    label: 'مديرين',
-    value: users.value.filter(u => u.role === 'admin').length,
-    icon: 'mdi-account-tie',
-    color: '#ff9800',
-    trend: -2
-  },
-  {
-    label: 'مستخدمين جدد',
-    value: users.value.filter(u => {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      return new Date(u.created_at) > thirtyDaysAgo;
-    }).length,
-    icon: 'mdi-account-plus',
-    color: '#9c27b0',
-    trend: 25
-  }
-]);
 
 // Methods
-const fetchUsers = async () => {
-  loading.value = true;
+const handleToggleUserStatus = async (user) => {
+  await toggleUserStatus(user);
+};
+
+const handleGroupChange = async (user, newGroupIds) => {
+  const currentGroupIds = user.selectedGroups || [];
+  
+  // Find groups to add and remove
+  const groupsToAdd = newGroupIds.filter(id => !currentGroupIds.includes(id));
+  const groupsToRemove = currentGroupIds.filter(id => !newGroupIds.includes(id));
+  
   try {
-    // Mock data for now
-    users.value = [
-      {
-        id: 1,
-        name: 'أحمد محمد',
-        email: 'ahmed@example.com',
-        phone: '+213 123 456 789',
-        role: 'admin',
-        active: true,
-        avatar: '/avatars/user1.jpg',
-        created_at: '2024-01-15T10:30:00Z',
-        last_login: '2024-04-01T14:20:00Z'
-      },
-      {
-        id: 2,
-        name: 'فاطمة علي',
-        email: 'fatima@example.com',
-        phone: '+213 987 654 321',
-        role: 'user',
-        active: true,
-        avatar: '/avatars/user2.jpg',
-        created_at: '2024-02-20T09:15:00Z',
-        last_login: '2024-03-31T16:45:00Z'
-      },
-      {
-        id: 3,
-        name: 'محمد سعيد',
-        email: 'mohamed@example.com',
-        phone: '+213 555 123 456',
-        role: 'user',
-        active: false,
-        avatar: '/avatars/user3.jpg',
-        created_at: '2024-03-10T11:00:00Z',
-        last_login: null
-      }
-    ];
+    // Remove user from groups first
+    for (const groupId of groupsToRemove) {
+      await removeUserFromGroup(user.id, groupId);
+    }
+    
+    // Add user to new groups
+    for (const groupId of groupsToAdd) {
+      await assignUserToGroup(user.id, groupId);
+    }
+    
+    // Update local state
+    user.selectedGroups = newGroupIds;
   } catch (error) {
-    console.error('Error fetching users:', error);
-    store.dispatch('notifications/showNotification', {
-      type: 'error',
-      message: 'حدث خطأ أثناء جلب المستخدمين'
-    });
-  } finally {
-    loading.value = false;
+    console.error('Error updating user groups:', error);
   }
 };
 
@@ -619,43 +709,24 @@ const resetUserForm = () => {
   editingUser.value = null;
 };
 
-const getRoleColor = (role) => {
-  const colors = {
-    admin: 'error',
-    moderator: 'warning',
-    user: 'primary'
-  };
-  return colors[role] || 'default';
-};
-
-const getRoleLabel = (role) => {
-  const labels = {
-    admin: 'مدير',
-    moderator: 'مشرف',
-    user: 'مستخدم'
-  };
-  return labels[role] || role;
-};
-
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('ar-SA', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
 
 // Lifecycle
 onMounted(() => {
   fetchUsers();
+  fetchGroups();
 });
 </script>
 
 <style scoped>
+.access-denied {
+  padding: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--bg-surface);
+}
+
 .users-manager {
   padding: 2rem;
   background: var(--bg-surface);
@@ -966,6 +1037,55 @@ onMounted(() => {
   .users-header,
   .users-content {
     border-radius: 12px;
+  }
+}
+
+/* User Profile Column Styles */
+.user-email {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.user-phone {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.user-address {
+  max-width: 200px;
+}
+
+.address-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.user-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Responsive adjustments for table */
+@media (max-width: 1200px) {
+  .address-text {
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 960px) {
+  .address-text {
+    max-width: 120px;
   }
 }
 </style>

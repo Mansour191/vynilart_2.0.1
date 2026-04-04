@@ -320,31 +320,92 @@
           
           <v-divider class="my-4" />
           
-          <!-- Order Products -->
+          <!-- Order Items for Production -->
           <v-card variant="tonal">
-            <v-card-title class="text-subtitle-1 mb-4">المنتجات</v-card-title>
+            <v-card-title class="text-subtitle-1 mb-4">
+              <v-icon color="warning" class="me-2">mdi-hammer-wrench</v-icon>
+              تفاصيل الإنتاج (الخامات المطلوبة)
+            </v-card-title>
             <v-card-text>
-              <v-list>
-                <v-list-item v-for="product in selectedOrder.products" :key="product.id">
-                  <template v-slot:prepend>
-                    <v-avatar size="40" :image="product.image" />
-                  </template>
-                  <v-list-item-title>
-                    {{ product.name }}
-                  </v-list-item-title>
-                  <v-list-item-subtitle>
-                    SKU: {{ product.sku }} | الكمية: {{ product.quantity }}
-                  </v-list-item-subtitle>
-                  <template v-slot:append>
-                    <div class="text-end">
-                      <div class="font-weight-bold">{{ formatCurrency(product.price) }}</div>
-                      <div class="text-caption text-medium-emphasis">
-                        {{ formatCurrency(product.price * product.quantity) }}
-                      </div>
+              <v-data-table
+                :headers="productionHeaders"
+                :items="selectedOrder.items || []"
+                class="production-table"
+                hide-default-footer
+                disable-pagination
+                density="compact"
+              >
+                <template v-slot:item.product="{ item }">
+                  <div class="product-info">
+                    <div class="product-image" v-if="item.product?.images?.length">
+                      <img :src="item.product.images[0].imageUrl" :alt="item.product.nameAr" />
                     </div>
-                  </template>
-                </v-list-item>
-              </v-list>
+                    <div class="product-details">
+                      <div class="product-name">{{ item.product?.nameAr }}</div>
+                      <div class="product-sku" v-if="item.variant?.sku">SKU: {{ item.variant.sku }}</div>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-slot:item.material="{ item }">
+                  <div class="material-info">
+                    <v-chip
+                      :color="item.material?.isPremium ? 'warning' : 'primary'"
+                      size="small"
+                      variant="flat"
+                      class="material-chip"
+                    >
+                      <v-icon start :icon="item.material?.isPremium ? 'mdi-star' : 'mdi-cube'"></v-icon>
+                      {{ item.material?.nameAr || 'خامة قياسية' }}
+                    </v-chip>
+                    <div class="material-properties" v-if="item.material?.properties">
+                      <v-icon size="x-small" class="me-1">mdi-information</v-icon>
+                      {{ getMaterialProperties(item.material.properties) }}
+                    </div>
+                  </div>
+                </template>
+
+                <template v-slot:item.specifications="{ item }">
+                  <div class="specifications">
+                    <div class="spec-item" v-if="item.quantity">
+                      <v-icon size="x-small" class="me-1">mdi-ruler</v-icon>
+                      الكمية: {{ item.quantity }}
+                      <span v-if="item.variant?.attributes?.unit">{{ item.variant.attributes.unit }}</span>
+                    </div>
+                    <div class="spec-item" v-if="item.variant?.attributes">
+                      <v-icon size="x-small" class="me-1">mdi-cog</v-icon>
+                      {{ getVariantAttributes(item.variant.attributes) }}
+                    </div>
+                    <div class="spec-item" v-if="item.customAttributes">
+                      <v-icon size="x-small" class="me-1">mdi-pencil</v-icon>
+                      {{ getCustomAttributes(item.customAttributes) }}
+                    </div>
+                  </div>
+                </template>
+
+                <template v-slot:item.pricing="{ item }">
+                  <div class="pricing-info">
+                    <div class="unit-price">{{ formatCurrency(item.price) }}</div>
+                    <div class="total-price">{{ formatCurrency(item.totalPrice) }}</div>
+                  </div>
+                </template>
+
+                <template v-slot:item.status="{ item }">
+                  <div class="production-status">
+                    <v-chip
+                      :color="getProductionStatusColor(item)"
+                      size="small"
+                      variant="flat"
+                    >
+                      {{ getProductionStatusText(item) }}
+                    </v-chip>
+                    <div class="production-notes" v-if="item.notes">
+                      <v-icon size="x-small" class="me-1">mdi-note-text</v-icon>
+                      {{ item.notes }}
+                    </div>
+                  </div>
+                </template>
+              </v-data-table>
             </v-card-text>
           </v-card>
           
@@ -377,6 +438,100 @@
           </v-row>
         </v-card-text>
         
+        <!-- Order History Section -->
+        <v-card variant="tonal" v-if="selectedOrder">
+          <v-card-title class="text-subtitle-1 mb-4">
+            <v-icon color="info" class="me-2">mdi-history</v-icon>
+            تاريخ الطلب (سجل التغييرات)
+          </v-card-title>
+          <v-card-text>
+            <div class="history-section">
+              <div class="history-header">
+                <div class="history-info">
+                  <span class="history-count">سجل {{ selectedOrder.timeline?.length || 0 }} تحديث</span>
+                  <v-btn
+                    @click="fetchOrderTimeline(selectedOrder.id)"
+                    :loading="timelineLoading"
+                    variant="text"
+                    size="small"
+                    prepend-icon="mdi-refresh"
+                  >
+                    تحديث السجل
+                  </v-btn>
+                </div>
+              </div>
+              
+              <v-timeline density="compact" align="start" v-if="selectedOrder.timeline?.length > 0">
+                <v-timeline-item
+                  v-for="timelineEntry in selectedOrder.timeline"
+                  :key="timelineEntry.id"
+                  :dot-color="getTimelineColor(timelineEntry.status)"
+                  size="small"
+                  :icon="getTimelineIcon(timelineEntry.status)"
+                >
+                  <template v-slot:opposite>
+                    <div class="history-date">
+                      {{ formatFullDate(timelineEntry.createdAt) }}
+                    </div>
+                    <div class="history-time">
+                      {{ formatTime(timelineEntry.createdAt) }}
+                    </div>
+                  </template>
+                  <div class="history-content">
+                    <div class="history-header-info">
+                      <div class="history-status">
+                        <v-chip
+                          :color="getTimelineColor(timelineEntry.status)"
+                          size="small"
+                          variant="flat"
+                        >
+                          <v-icon start :icon="getTimelineIcon(timelineEntry.status)"></v-icon>
+                          {{ getStatusText(timelineEntry.status) }}
+                        </v-chip>
+                        <v-chip
+                          v-if="timelineEntry.isAutomatic"
+                          size="x-small"
+                          color="info"
+                          variant="flat"
+                          class="ms-2"
+                        >
+                          <v-icon start icon="mdi-robot"></v-icon>
+                          تلقائي
+                        </v-chip>
+                      </div>
+                      <div class="history-user-info">
+                        <span v-if="timelineEntry.createdBy" class="history-user">
+                          <v-icon size="x-small" class="me-1">mdi-account</v-icon>
+                          {{ getUserName(timelineEntry.createdBy) }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="history-note" v-if="timelineEntry.note">
+                      <v-icon size="small" class="me-1">mdi-note-text"></v-icon>
+                      {{ timelineEntry.note }}
+                    </div>
+                    <div class="history-actions" v-if="canAddTimelineEntry && !timelineEntry.isAutomatic">
+                      <v-btn
+                        size="x-small"
+                        variant="text"
+                        prepend-icon="mdi-comment-plus"
+                        @click="addTimelineNote(timelineEntry)"
+                      >
+                        إضافة ملاحظة
+                      </v-btn>
+                    </div>
+                  </div>
+                </v-timeline-item>
+              </v-timeline>
+              
+              <div v-else class="no-history">
+                <v-icon size="48" color="grey-lighten-1">mdi-history</v-icon>
+                <p class="mt-3 text-medium-emphasis">لا يوجد سجل تغييرات لهذا الطلب</p>
+              </div>
+            </div>
+          </v-card-text>
+        </v-card>
+        
         <v-card-actions class="pa-4">
           <v-spacer />
           <v-btn @click="closeOrderModal" variant="tonal">إغلاق</v-btn>
@@ -395,10 +550,34 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { debounce } from 'lodash';
+import { useQuery, useMutation } from '@vue/apollo-composable';
+import { useOrders } from '@/composables/useOrders';
+import { useStore } from 'vuex';
+import { useI18n } from 'vue-i18n';
+import { ORDER_TIMELINE_QUERY, ADD_TIMELINE_STEP_MUTATION } from '@/integration/graphql/orders.graphql';
+
+// Composables
+const { 
+  allOrders, 
+  loading, 
+  error,
+  fetchAllOrders,
+  getOrderStatusInfo,
+  getPaymentMethodInfo,
+  canUpdateStatus,
+  formatOrderNumber,
+  formatPrice,
+  formatDate,
+  updateOrderStatus,
+  updateTrackingNumber,
+  fetchOrderStats,
+  searchOrders
+} = useOrders();
+
+const store = useStore();
+const { t } = useI18n();
 
 // State
-const loading = ref(false);
-const orders = ref([]);
 const searchQuery = ref('');
 const statusFilter = ref('');
 const paymentFilter = ref('');
@@ -409,6 +588,10 @@ const itemsPerPage = ref(10);
 const selectedOrders = ref([]);
 const showOrderModal = ref(false);
 const selectedOrder = ref(null);
+const updatingStatus = ref(false);
+const updatingTracking = ref(false);
+const timelineLoading = ref(false);
+const canAddTimelineEntry = ref(true);
 
 // Stats - will be loaded from API
 const stats = ref({
@@ -424,20 +607,20 @@ const stats = ref({
 
 // Options
 const statusOptions = [
-  { text: 'جميع الحالات', value: '' },
-  { text: 'قيد الانتظار', value: 'pending' },
-  { text: 'قيد المعالجة', value: 'processing' },
-  { text: 'تم الشحن', value: 'shipped' },
-  { text: 'تم التوصيل', value: 'delivered' },
-  { text: 'ملغي', value: 'cancelled' }
+  { text: t('allStatuses') || 'جميع الحالات', value: '' },
+  { text: t('pending') || 'قيد الانتظار', value: 'pending' },
+  { text: t('confirmed') || 'مؤكد', value: 'confirmed' },
+  { text: t('processing') || 'قيد المعالجة', value: 'processing' },
+  { text: t('shipped') || 'تم الشحن', value: 'shipped' },
+  { text: t('delivered') || 'تم التوصيل', value: 'delivered' },
+  { text: t('cancelled') || 'ملغي', value: 'cancelled' }
 ];
 
 const paymentOptions = [
-  { text: 'جميع طرق الدفع', value: '' },
-  { text: 'الدفع عند الاستلام', value: 'cash' },
-  { text: 'بطاقة ائتمان', value: 'card' },
-  { text: 'تحويل بنكي', value: 'bank' },
-  { text: 'الدفع الإلكتروني', value: 'electronic' }
+  { text: t('allPaymentMethods') || 'جميع طرق الدفع', value: '' },
+  { text: t('cashOnDelivery') || 'الدفع عند الاستلام', value: 'cod' },
+  { text: t('creditCard') || 'بطاقة بنكية', value: 'card' },
+  { text: t('ccp') || 'CCP', value: 'ccp' }
 ];
 
 // Table Headers
@@ -451,18 +634,34 @@ const tableHeaders = [
   { title: 'الإجراءات', key: 'actions', sortable: false }
 ];
 
+// Production Table Headers
+const productionHeaders = [
+  { title: 'المنتج', key: 'product', sortable: false },
+  { title: 'نوع الخامة', key: 'material', sortable: false },
+  { title: 'المواصفات', key: 'specifications', sortable: false },
+  { title: 'السعر', key: 'pricing', sortable: false },
+  { title: 'الحالة', key: 'status', sortable: false }
+];
+
 // Computed
 const filteredOrders = computed(() => {
-  return orders.value.filter(order => {
-    const matchesSearch = !searchQuery.value || 
-      order.id.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      order.customer.toLowerCase().includes(searchQuery.value.toLowerCase());
-    
-    const matchesStatus = !statusFilter.value || order.status === statusFilter.value;
-    const matchesPayment = !paymentFilter.value || order.paymentMethod === paymentFilter.value;
-    
-    return matchesSearch && matchesStatus && matchesPayment;
-  });
+  let orders = allOrders.value;
+  
+  // Apply filters
+  if (statusFilter.value) {
+    orders = orders.filter(order => order.status === statusFilter.value);
+  }
+  
+  if (paymentFilter.value) {
+    orders = orders.filter(order => order.paymentMethod === paymentFilter.value);
+  }
+  
+  // Apply search
+  if (searchQuery.value) {
+    orders = searchOrders(orders, searchQuery.value);
+  }
+  
+  return orders;
 });
 
 const sortedOrders = computed(() => {
@@ -471,8 +670,8 @@ const sortedOrders = computed(() => {
     let aVal = a[sortKey.value];
     let bVal = b[sortKey.value];
     
-    if (sortKey.value === 'total') return sortOrder.value === 'asc' ? aVal - bVal : bVal - aVal;
-    if (sortKey.value === 'date') return sortOrder.value === 'asc' ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
+    if (sortKey.value === 'totalAmount') return sortOrder.value === 'asc' ? aVal - bVal : bVal - aVal;
+    if (sortKey.value === 'createdAt') return sortOrder.value === 'asc' ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
     
     aVal = String(aVal).toLowerCase();
     bVal = String(bVal).toLowerCase();
@@ -516,9 +715,12 @@ const resetFilters = () => {
   currentPage.value = 1;
 };
 
-const viewOrder = (order) => {
+const viewOrder = async (order) => {
   selectedOrder.value = { ...order };
   showOrderModal.value = true;
+  
+  // Fetch timeline data for the selected order
+  await fetchOrderTimeline(order.id);
 };
 
 const closeOrderModal = () => {
@@ -530,50 +732,75 @@ const editOrder = (order) => {
   console.log('Edit order:', order);
 };
 
-const updateOrderStatus = async (order, status) => {
+const handleUpdateOrderStatus = async (order, status) => {
+  if (!canUpdateStatus(order)) {
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: t('cannotUpdateStatus') || 'لا يمكن تحديث حالة هذا الطلب',
+      timeout: 3000
+    });
+    return;
+  }
+
+  updatingStatus.value = true;
   try {
-    // Import OrdersService dynamically
-    const { default: OrdersService } = await import('./OrdersService.js');
-    
-    // Update status via API
-    const response = await OrdersService.updateOrderStatus(order.id, status);
-    
-    if (response.success) {
-      // Update local state
-      const index = orders.value.findIndex(o => o.id === order.id);
-      if (index !== -1) {
-        orders.value[index].status = status;
-        orders.value[index].timeline.push({
-          status,
-          date: new Date().toISOString(),
-          note: `تم تحديث الحالة إلى ${status}`
-        });
-      }
+    const result = await updateOrderStatus(order.id, status, `تم تحديث الحالة إلى ${getOrderStatusInfo(status).text}`);
+    if (result.success) {
+      store.dispatch('notifications/add', {
+        type: 'success',
+        title: t('statusUpdated') || 'تم تحديث الحالة',
+        message: result.message,
+        timeout: 3000
+      });
     } else {
-      console.error('Failed to update order status:', response.error);
-      // Fallback to local update
-      const index = orders.value.findIndex(o => o.id === order.id);
-      if (index !== -1) {
-        orders.value[index].status = status;
-        orders.value[index].timeline.push({
-          status,
-          date: new Date().toISOString(),
-          note: `تم تحديث الحالة إلى ${status}`
-        });
-      }
+      throw new Error(result.message);
     }
   } catch (error) {
-    console.error('Error updating order status:', error);
-    // Fallback to local update
-    const index = orders.value.findIndex(o => o.id === order.id);
-    if (index !== -1) {
-      orders.value[index].status = status;
-      orders.value[index].timeline.push({
-        status,
-        date: new Date().toISOString(),
-        note: `تم تحديث الحالة إلى ${status}`
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: error.message,
+      timeout: 5000
+    });
+  } finally {
+    updatingStatus.value = false;
+  }
+};
+
+const handleUpdateTracking = async (order, trackingNumber) => {
+  if (!trackingNumber) {
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: t('trackingNumberRequired') || 'رقم التتبع مطلوب',
+      timeout: 3000
+    });
+    return;
+  }
+
+  updatingTracking.value = true;
+  try {
+    const result = await updateTrackingNumber(order.id, trackingNumber);
+    if (result.success) {
+      store.dispatch('notifications/add', {
+        type: 'success',
+        title: t('trackingUpdated') || 'تم تحديث رقم التتبع',
+        message: result.message,
+        timeout: 3000
       });
+    } else {
+      throw new Error(result.message);
     }
+  } catch (error) {
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: error.message,
+      timeout: 5000
+    });
+  } finally {
+    updatingTracking.value = false;
   }
 };
 
@@ -712,8 +939,208 @@ const formatDate = (dateString) => {
   });
 };
 
+// Production Helper Methods
+const getMaterialProperties = (properties) => {
+  if (!properties || typeof properties !== 'object') return '';
+  
+  const props = [];
+  if (properties.texture) props.push(`ملمس: ${properties.texture}`);
+  if (properties.finish) props.push(`نهاية: ${properties.finish}`);
+  if (properties.thickness) props.push(`سمك: ${properties.thickness}mm`);
+  if (properties.weight) props.push(`وزن: ${properties.weight}g/m²`);
+  
+  return props.join(' | ');
+};
+
+const getVariantAttributes = (attributes) => {
+  if (!attributes || typeof attributes !== 'object') return '';
+  
+  const attrs = [];
+  if (attributes.size) attrs.push(`المقاس: ${attributes.size}`);
+  if (attributes.color) attrs.push(`اللون: ${attributes.color}`);
+  if (attributes.dimension) attrs.push(`الأبعاد: ${attributes.dimension}`);
+  if (attributes.orientation) attrs.push(`الاتجاه: ${attributes.orientation}`);
+  
+  return attrs.join(' | ');
+};
+
+const getCustomAttributes = (attributes) => {
+  if (!attributes || typeof attributes !== 'object') return '';
+  
+  const attrs = [];
+  if (attributes.customText) attrs.push(`نص مخصص: ${attributes.customText}`);
+  if (attributes.customDesign) attrs.push(`تصميم مخصص`);
+  if (attributes.urgent) attrs.push(`طلب عاجل`);
+  if (attributes.notes) attrs.push(`ملاحظات: ${attributes.notes}`);
+  
+  return attrs.join(' | ');
+};
+
+const getProductionStatusColor = (item) => {
+  // Logic to determine production status based on order status and item properties
+  const orderStatus = selectedOrder.value?.status;
+  
+  if (orderStatus === 'cancelled') return 'error';
+  if (orderStatus === 'delivered') return 'success';
+  if (orderStatus === 'shipped') return 'info';
+  if (orderStatus === 'processing') return 'warning';
+  if (item.material?.isPremium) return 'purple';
+  
+  return 'grey';
+};
+
+const getProductionStatusText = (item) => {
+  const orderStatus = selectedOrder.value?.status;
+  
+  if (orderStatus === 'cancelled') return 'ملغي';
+  if (orderStatus === 'delivered') return 'مكتمل';
+  if (orderStatus === 'shipped') return 'تم الشحن';
+  if (orderStatus === 'processing') return 'قيد الإنتاج';
+  if (item.material?.isPremium) return 'خامة مميزة';
+  
+  return 'في الانتظار';
+};
+
+// Timeline Methods
+const fetchOrderTimeline = async (orderId) => {
+  if (!orderId) return;
+  
+  timelineLoading.value = true;
+  try {
+    const { client } = await import('@/shared/plugins/apolloPlugin');
+    const { result } = await client.default.query({
+      query: ORDER_TIMELINE_QUERY,
+      variables: { orderId },
+      fetchPolicy: 'network-only'
+    });
+    
+    if (result.data?.orderTimeline) {
+      // Update selectedOrder with timeline data
+      if (selectedOrder.value) {
+        selectedOrder.value.timeline = result.data.orderTimeline.sort((a, b) => 
+          new Date(b.createdAt) - new Date(a.createdAt)
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching order timeline:', error);
+    store.dispatch('notifications/showNotification', {
+      type: 'error',
+      message: 'حدث خطأ أثناء جلب سجل الطلب'
+    });
+  } finally {
+    timelineLoading.value = false;
+  }
+};
+
+const addTimelineNote = async (timelineEntry) => {
+  const note = prompt('أدخل ملاحظة:');
+  if (!note) return;
+  
+  try {
+    const { mutate } = useMutation(ADD_TIMELINE_STEP_MUTATION);
+    const result = await mutate({
+      variables: {
+        orderId: selectedOrder.value.id,
+        status: timelineEntry.status,
+        note: note,
+        isAutomatic: false
+      }
+    });
+    
+    if (result.data?.addTimelineStep?.success) {
+      // Refresh timeline
+      await fetchOrderTimeline(selectedOrder.value.id);
+      
+      store.dispatch('notifications/showNotification', {
+        type: 'success',
+        message: 'تمت إضافة الملاحظة بنجاح'
+      });
+    } else {
+      throw new Error(result.data?.addTimelineStep?.message || 'فشل إضافة الملاحظة');
+    }
+  } catch (error) {
+    console.error('Error adding timeline note:', error);
+    store.dispatch('notifications/showNotification', {
+      type: 'error',
+      message: 'حدث خطأ أثناء إضافة الملاحظة'
+    });
+  }
+};
+
+const getTimelineColor = (status) => {
+  const colors = {
+    'pending': 'warning',
+    'confirmed': 'info',
+    'processing': 'primary',
+    'shipped': 'purple',
+    'delivered': 'success',
+    'cancelled': 'error'
+  };
+  return colors[status] || 'grey';
+};
+
+const getTimelineIcon = (status) => {
+  const icons = {
+    'pending': 'mdi-clock-outline',
+    'confirmed': 'mdi-check-circle-outline',
+    'processing': 'mdi-cog',
+    'shipped': 'mdi-truck',
+    'delivered': 'mdi-package-variant-closed',
+    'cancelled': 'mdi-cancel'
+  };
+  return icons[status] || 'mdi-information';
+};
+
+const getUserName = (user) => {
+  if (!user) return 'النظام';
+  return user.firstName && user.lastName 
+    ? `${user.firstName} ${user.lastName}`
+    : user.username || 'مستخدم';
+};
+
+const formatFullDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('ar-SA', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+};
+
+const formatTime = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('ar-SA', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 // Load data from API
 const loadOrders = async () => {
+  await fetchAllOrders();
+  await loadStats();
+};
+
+const loadStats = async () => {
+  const statsData = await fetchOrderStats();
+  if (statsData) {
+    stats.value = {
+      totalOrders: statsData.totalOrders || 0,
+      totalOrdersTrend: 0, // Will be calculated from historical data
+      todayOrders: 0, // Will be calculated from statsData
+      todayOrdersTrend: 0,
+      processingOrders: statsData.ordersByStatus?.find(s => s.status === 'processing')?.count || 0,
+      processingOrdersTrend: 0,
+      deliveredOrders: statsData.ordersByStatus?.find(s => s.status === 'delivered')?.count || 0,
+      deliveredOrdersTrend: 0
+    };
+  }
+};
+
+const fetchAllOrders = async () => {
   loading.value = true;
   try {
     // Import OrdersService dynamically
@@ -743,17 +1170,6 @@ const loadOrders = async () => {
       // Final fallback to direct API
       orders.value = await fetchOrders();
     }
-    
-    // Load statistics from API
-    try {
-      const statsResponse = await OrdersService.getOrderStats();
-      if (statsResponse.success) {
-        stats.value = statsResponse.data;
-      } else {
-        console.error('Failed to load stats:', statsResponse.error);
-        // Try direct API for stats
-        const statsData = await fetch('/api/orders/statistics');
-        if (statsData.ok) {
           stats.value = await statsData.json();
         } else {
           // Fallback to calculated stats
@@ -906,9 +1322,211 @@ onMounted(() => {
   max-height: 90vh;
 }
 
+/* Production Table Styles */
+.production-table {
+  border-radius: 12px;
+}
+
+.product-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.product-image {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-details {
+  flex: 1;
+}
+
+.product-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.product-sku {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.material-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.material-chip {
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+
+.material-properties {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.specifications {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.spec-item {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+}
+
+.pricing-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.unit-price {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.total-price {
+  font-weight: 700;
+  color: var(--primary-color);
+  font-size: 1rem;
+}
+
+.production-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.production-notes {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  text-align: center;
+}
+
 @media print {
   .v-btn {
     display: none !important;
   }
+  
+  .production-table {
+    font-size: 10px;
+  }
+  
+  .product-image {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+/* History Section Styles */
+.history-section {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.history-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.history-count {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.history-date {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.history-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.history-content {
+  margin-bottom: 0.5rem;
+}
+
+.history-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.history-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.history-user-info {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.history-user {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.history-note {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+.history-actions {
+  margin-top: 0.5rem;
+}
+
+.no-history {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
 }
 </style>

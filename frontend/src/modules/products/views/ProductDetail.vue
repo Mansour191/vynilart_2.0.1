@@ -38,8 +38,8 @@
         <v-col cols="12" md="6">
           <v-card elevation="2" class="rounded-3xl pa-4">
             <v-img
-              :src="product.image"
-              :alt="product.name"
+              :src="mainProductImage?.imageUrl || '/placeholder-product.jpg'"
+              :alt="mainProductImage?.altText || product?.nameAr || 'Product Image'"
               height="420"
               class="rounded-2xl"
               cover
@@ -47,6 +47,28 @@
               <template #placeholder>
                 <v-skeleton-loader type="image"></v-skeleton-loader>
               </template>
+              
+              <!-- Stock Status Badge -->
+              <div class="position-absolute top-2 left-2">
+                <v-chip
+                  :color="stockStatus === 'in_stock' ? 'success' : stockStatus === 'low_stock' ? 'warning' : 'error'"
+                  variant="elevated"
+                  size="small"
+                >
+                  {{ stockStatusText }}
+                </v-chip>
+              </div>
+              
+              <!-- Discount Badge -->
+              <div v-if="discountPercentage > 0" class="position-absolute top-2 right-2">
+                <v-chip
+                  color="error"
+                  variant="elevated"
+                  size="small"
+                >
+                  {{ discountLabel }}
+                </v-chip>
+              </div>
             </v-img>
           </v-card>
         </v-col>
@@ -56,12 +78,25 @@
             <v-card-text>
               <!-- Product Title and Price -->
               <div class="mb-6">
-                <h1 class="text-h3 font-weight-bold mb-2">{{ product.name }}</h1>
-                <p class="text-body-1 text-medium-emphasis mb-4">{{ product.description }}</p>
+                <h1 class="text-h3 font-weight-bold mb-2">{{ product.nameAr || product.nameEn }}</h1>
+                <p class="text-body-1 text-medium-emphasis mb-4">{{ product.descriptionAr || product.descriptionEn }}</p>
                 
-                <!-- Price -->
-                <div class="text-h3 font-weight-black text-warning mb-4">
-                  {{ formatPrice(product.price) }}
+                <!-- Price with Discount -->
+                <div class="mb-4">
+                  <div v-if="discountPercentage > 0" class="d-flex align-center gap-2 mb-2">
+                    <span class="text-h3 font-weight-black text-warning">
+                      {{ formatPrice(priceBreakdown.finalPrice) }}
+                    </span>
+                    <span class="text-body-2 text-medium-emphasis text-decoration-line-through">
+                      {{ formatPrice(priceBreakdown.basePrice) }}
+                    </span>
+                    <v-chip color="error" variant="elevated" size="small">
+                      -{{ discountPercentage }}%
+                    </v-chip>
+                  </div>
+                  <div v-else class="text-h3 font-weight-black text-warning">
+                    {{ formatPrice(priceBreakdown.basePrice) }}
+                  </div>
                 </div>
               </div>
 
@@ -85,18 +120,61 @@
                   color="warning"
                   size="large"
                   prepend-icon="mdi-cart-plus"
-                  class="flex-grow-1"
+                  :disabled="!canAddToCartComputed"
+                  :loading="loading"
                   @click="addToCart"
+                  block
                 >
-                  {{ $t('addToCart') }}
+                  {{ canAddToCartComputed ? ($t('addToCart') || 'أضف للسلة') : (stockStatus === 'out_of_stock' ? ($t('outOfStock') || 'نفد المخزون') : ($t('insufficientStock') || 'مخزون غير كافي')) }}
                 </v-btn>
+                
                 <v-btn
-                  color="secondary"
-                  icon="mdi-heart-outline"
+                  color="success"
+                  size="large"
+                  prepend-icon="mdi-whatsapp"
+                  :href="`https://wa.me/213663140341?text=${encodeURIComponent(($t('productInquiry') || 'استفسار عن المنتج') + ': ' + (product.nameAr || product.nameEn))}`"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   variant="outlined"
-                  @click="toggleWishlist"
                 >
+                  {{ $t('inquire') || 'استفسار' }}
                 </v-btn>
+              </div>
+              
+              <!-- Quantity Selector -->
+              <div class="mb-6">
+                <h3 class="text-subtitle-1 font-weight-bold mb-3">{{ $t('quantity') || 'الكمية' }}</h3>
+                <div class="d-flex align-center gap-2">
+                  <v-btn
+                    icon="mdi-minus"
+                    variant="outlined"
+                    :disabled="quantity <= 1"
+                    @click="decrementQuantity"
+                  />
+                  <v-text-field
+                    v-model="quantity"
+                    type="number"
+                    min="1"
+                    :max="currentStock"
+                    variant="outlined"
+                    density="compact"
+                    class="flex-grow-0"
+                    style="width: 80px"
+                    hide-details
+                  />
+                  <v-btn
+                    icon="mdi-plus"
+                    variant="outlined"
+                    :disabled="quantity >= currentStock"
+                    @click="incrementQuantity"
+                  />
+                </div>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  {{ $t('availableStock') || 'المخزون المتاح' }}: {{ currentStock }}
+                  <span v-if="selectedVariant" class="ms-2">
+                    ({{ $t('variant') || 'تنوع' }}: {{ selectedVariant.name }})
+                  </span>
+                </div>
               </div>
 
               <!-- Product Details -->
@@ -109,7 +187,17 @@
                   </v-col>
                   <v-col cols="6" class="mb-3">
                     <div class="text-caption text-medium-emphasis">{{ $t('material') }}</div>
-                    <div class="text-body-2">{{ product.material }}</div>
+                    <div class="text-body-2">
+                      <v-chip
+                        v-if="selectedMaterial"
+                        :color="selectedMaterial.isPremium ? 'warning' : 'primary'"
+                        variant="elevated"
+                        size="small"
+                      >
+                        {{ getMaterialName(selectedMaterial) }}
+                      </v-chip>
+                      <span v-else>{{ $t('selectMaterial') || 'اختر المادة' }}</span>
+                    </div>
                   </v-col>
                   <v-col cols="6" class="mb-3">
                     <div class="text-caption text-medium-emphasis">{{ $t('dimensions') }}</div>
@@ -169,6 +257,35 @@
                 </v-alert>
               </div>
 
+              <!-- Material Selection -->
+              <div class="material-selection mb-6">
+                <ProductMaterialSelector
+                  v-if="currentProduct && hasAvailableMaterials(currentProduct)"
+                  :product="currentProduct"
+                  :dimensions="productDimensions"
+                  :quantity="quantity"
+                  @material-selected="onProductMaterialSelected"
+                  @price-change="onProductMaterialPriceChange"
+                />
+                <MaterialSelector
+                  v-else
+                  v-model="selectedMaterial"
+                  :dimensions="productDimensions"
+                  :quantity="quantity"
+                  @price-update="onPriceUpdate"
+                />
+              </div>
+
+              <!-- Variant Selection -->
+              <div v-if="currentProduct?.variants?.length > 0" class="variant-selection mb-6">
+                <VariantSelector
+                  :product="currentProduct"
+                  :show-price-comparison="true"
+                  @variant-selected="onVariantSelected"
+                  @price-change="onVariantPriceChange"
+                />
+              </div>
+
               <!-- Shipping Info -->
               <div class="shipping-info mb-6">
                 <h3 class="text-h6 font-weight-bold mb-3">{{ $t('shippingInfo') }}</h3>
@@ -192,20 +309,62 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
+import { useProductDetails } from '@/composables/useProductDetails';
+import { useMaterials } from '@/composables/useMaterials';
+import MaterialSelector from '@/shared/components/MaterialSelector.vue';
+import ProductMaterialSelector from '@/shared/components/ProductMaterialSelector.vue';
+import VariantSelector from '@/shared/components/VariantSelector.vue';
 
 const route = useRoute();
 const router = useRouter();
 const store = useStore();
 const { t } = useI18n();
 
+// Composables
+const { 
+  getProductBySlug, 
+  selectProduct, 
+  isInStock, 
+  getStockStatus, 
+  getStockStatusText,
+  canAddToCart,
+  updateQuantity,
+  incrementQuantity,
+  decrementQuantity,
+  getMainImage,
+  getAllImages,
+  formatPrice,
+  formatDimensions,
+  getDiscountPercentage,
+  getDiscountLabel,
+  loadRelatedProducts,
+  // Product Materials
+  getAvailableMaterials,
+  hasAvailableMaterials,
+  calculateProductMaterialPrice,
+  formatMaterialName,
+  currentProduct,
+  selectedVariant,
+  selectedImage,
+  quantity,
+  priceBreakdown,
+  loading: productLoading,
+  error: productError
+} = useProductDetails();
+
+const { getMaterialName, calculateTotalPrice } = useMaterials();
+
 // Reactive data
 const loading = ref(true);
 const error = ref(null);
 const product = ref(null);
+const selectedMaterial = ref(null);
+const productDimensions = ref({ width: 100, height: 100 });
+const calculatedPrice = ref(0);
 const referenceDimension = ref(null);
 const aiImageFile = ref(null);
 const aiLoading = ref(false);
@@ -213,6 +372,67 @@ const aiResults = ref(null);
 
 // Computed
 const productId = computed(() => route.params.id);
+const productSlug = computed(() => route.params.slug || route.params.id);
+const finalPrice = computed(() => {
+  if (currentProduct.value) {
+    return priceBreakdown.value.totalCost;
+  }
+  return 0;
+});
+
+const stockStatus = computed(() => {
+  if (currentProduct.value) {
+    // Use variant stock if variant is selected, otherwise use product stock
+    return getStockStatus(currentProduct.value, selectedVariant.value);
+  }
+  return 'out_of_stock';
+});
+
+const stockStatusText = computed(() => {
+  return getStockStatusText(stockStatus.value);
+});
+
+const currentStock = computed(() => {
+  if (selectedVariant.value) {
+    return selectedVariant.value.stock || 0;
+  }
+  return currentProduct.value?.stock || 0;
+});
+
+const canAddToCartComputed = computed(() => {
+  return canAddToCart(currentProduct.value, selectedVariant.value, quantity.value);
+});
+
+const discountPercentage = computed(() => {
+  if (currentProduct.value) {
+    return getDiscountPercentage(currentProduct.value);
+  }
+  return 0;
+});
+
+const discountLabel = computed(() => {
+  if (currentProduct.value) {
+    return getDiscountLabel(currentProduct.value);
+  }
+  return '';
+});
+
+const productImages = computed(() => {
+  if (currentProduct.value) {
+    return getAllImages(currentProduct.value);
+  }
+  return [];
+});
+
+const mainProductImage = computed(() => {
+  if (selectedImage.value) {
+    return selectedImage.value;
+  }
+  if (currentProduct.value) {
+    return getMainImage(currentProduct.value);
+  }
+  return null;
+});
 
 // Methods
 const fetchProduct = async () => {
@@ -220,68 +440,46 @@ const fetchProduct = async () => {
   error.value = null;
   
   try {
-    // Dynamic API call
-    const response = await fetch(`/api/products/${productId.value}`);
-    if (response.ok) {
-      const data = await response.json();
-      product.value = {
-        id: data.id,
-        name: data.name,
-        description: data.description,
-        price: data.price,
-        image: data.image_url || 'https://i.postimg.cc/7L0DfPgY/Entrance1.png',
-        category: data.category?.name || 'ديكور',
-        material: data.material || 'فينيل عالي الجودة',
-        dimensions: data.dimensions || '60x120 سم',
-        weight: data.weight || '0.5 كجم',
-        tags: data.tags || ['جديد', 'مميز'],
-        deliveryTime: data.delivery_time || '3-5 أيام',
-        shippingCost: data.shipping_cost || 500
-      };
+    // Use GraphQL composable instead of REST API
+    const { result, loading: queryLoading, error: queryError } = getProductBySlug(productSlug.value);
+    
+    // Wait for the query to complete
+    if (queryLoading.value) {
+      return;
+    }
+    
+    if (queryError.value) {
+      throw new Error(queryError.value.message);
+    }
+    
+    const productsData = result.value?.products?.edges;
+    if (productsData && productsData.length > 0) {
+      const productData = productsData[0].node;
+      
+      // Select the product using the composable
+      selectProduct(productData);
+      product.value = productData;
+      
+      // Load related products
+      if (productData.category?.id) {
+        await loadRelatedProducts(productData.category.id, productData.id);
+      }
+      
+      console.log('✅ Product loaded via GraphQL:', product.value);
     } else {
       throw new Error('Product not found');
     }
   } catch (err) {
-    console.error('Error fetching product:', err);
-    error.value = t('productNotFound');
+    console.error('❌ Error fetching product:', err);
+    error.value = t('productNotFound') || 'المنتج غير موجود';
   } finally {
     loading.value = false;
   }
 };
 
-const formatPrice = (price) => {
-  return new Intl.NumberFormat('ar-DZ', {
-    style: 'currency',
-    currency: 'DZD'
-  }).format(price);
-};
-
-const addToCart = () => {
-  if (!product.value) return;
-  
-  store.dispatch('cart/addItem', {
-    id: product.value.id,
-    name: product.value.name,
-    price: product.value.price,
-    image: product.value.image,
-    quantity: 1
-  });
-  
-  store.dispatch('notifications/showNotification', {
-    type: 'success',
-    message: t('addedToCart')
-  });
-};
-
-const toggleWishlist = () => {
-  if (!product.value) return;
-  
-  store.dispatch('wishlist/toggleItem', product.value);
-  
-  store.dispatch('notifications/showNotification', {
-    type: 'success',
-    message: product.value.inWishlist ? t('removedFromWishlist') : t('addedToWishlist')
-  });
+const onPriceUpdate = (newPrice) => {
+  calculatedPrice.value = newPrice;
+  console.log('💰 Material price updated:', newPrice);
 };
 
 const onImageChange = (event) => {
@@ -293,35 +491,121 @@ const runSmartMeasurement = async () => {
   if (!aiImageFile.value || !referenceDimension.value) return;
   
   aiLoading.value = true;
+  aiResults.value = null;
   
   try {
-    // Mock AI calculation
+    // Mock AI measurement calculation
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    const area = Math.random() * 10 + 5; // Random area between 5-15 m²
-    const price = area * product.value.price * 0.8; // Calculate based on area
+    const area = (productDimensions.value.width * productDimensions.value.height) / 10000; // Convert to m²
+    const basePrice = currentProduct.value?.basePrice || 0;
+    const materialPrice = selectedMaterial.value ? 
+      calculateTotalPrice(selectedMaterial.value, productDimensions.value, quantity.value) : 0;
     
     aiResults.value = {
       area: area.toFixed(2),
-      price: price
+      price: basePrice + materialPrice
     };
     
-    store.dispatch('notifications/showNotification', {
-      type: 'success',
-      message: t('measurementCalculated')
-    });
-  } catch (err) {
-    console.error('AI measurement error:', err);
-    store.dispatch('notifications/showNotification', {
-      type: 'error',
-      message: t('measurementError')
-    });
+    console.log('✅ AI measurement completed:', aiResults.value);
+  } catch (error) {
+    console.error('❌ AI measurement error:', error);
   } finally {
     aiLoading.value = false;
   }
 };
 
-// Lifecycle
+const addToCart = () => {
+  if (!canAddToCartComputed.value) {
+    console.warn('⚠️ Cannot add to cart: Product not available or insufficient stock');
+    return;
+  }
+  
+  const cartItem = {
+    product: currentProduct.value,
+    variant: selectedVariant.value,
+    material: selectedMaterial.value,
+    quantity: quantity.value,
+    dimensions: productDimensions.value,
+    price: finalPrice.value,
+    // Include variant information for proper order preparation
+    variantId: selectedVariant.value?.id || null,
+    sku: selectedVariant.value?.sku || currentProduct.value.sku || 'N/A',
+    variantName: selectedVariant.value?.name || null,
+    totalPrice: finalPrice.value
+  };
+  
+  // Dispatch to store
+  store.dispatch('cart/addItem', cartItem);
+  
+  console.log('✅ Added to cart:', cartItem);
+  
+  // Show success notification
+  store.dispatch('notifications/add', {
+    type: 'success',
+    title: t('addedToCart') || 'تمت الإضافة للسلة',
+    message: `${currentProduct.value.nameAr || currentProduct.value.nameEn} ${selectedVariant.value ? `(${selectedVariant.value.name})` : ''} × ${quantity.value}`,
+    icon: 'mdi-cart',
+    timeout: 3000
+  });
+};
+
+const selectProductImage = (image) => {
+  if (image) {
+    selectedImage.value = image;
+    console.log('✅ Product image selected:', image);
+  }
+};
+
+const onVariantSelected = (variant) => {
+  console.log('✅ Variant selected in ProductDetail:', variant);
+  // Variant selection is handled by useProductDetails composable
+};
+
+const onVariantPriceChange = (newPrice) => {
+  console.log('💰 Variant price changed:', newPrice);
+  // Price breakdown is automatically updated by useProductDetails composable
+};
+
+const onProductMaterialSelected = (material) => {
+  console.log('✅ Product material selected:', material);
+  selectedMaterial.value = material;
+  
+  // Update price breakdown with material cost
+  const materialCost = calculateProductMaterialPrice(
+    currentProduct.value,
+    material,
+    productDimensions.value,
+    quantity.value
+  );
+  updatePriceBreakdown(materialCost);
+};
+
+const onProductMaterialPriceChange = (materialCost) => {
+  console.log('💰 Product material price changed:', materialCost);
+  updatePriceBreakdown(materialCost);
+};
+
+// Watchers
+watch(() => currentProduct.value, (newProduct) => {
+  if (newProduct) {
+    product.value = newProduct;
+  }
+});
+
+watch(() => productDimensions.value, () => {
+  if (selectedMaterial.value) {
+    onPriceUpdate(calculateTotalPrice(selectedMaterial.value, productDimensions.value, quantity.value));
+  }
+}, { deep: true });
+
+watch(() => quantity.value, () => {
+  if (selectedMaterial.value) {
+    onPriceUpdate(calculateTotalPrice(selectedMaterial.value, productDimensions.value, quantity.value));
+  }
+});
+
+// Initialize
 onMounted(() => {
   fetchProduct();
 });

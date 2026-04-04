@@ -106,6 +106,15 @@ class ProductImage(models.Model):
     def __str__(self):
         return f"{self.product.name_ar} - Image"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['product']),
+            models.Index(fields=['product', 'is_main']),
+            models.Index(fields=['product', 'sort_order']),
+            models.Index(fields=['is_main']),
+            models.Index(fields=['sort_order']),
+        ]
+
 
 class ProductVariant(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
@@ -122,19 +131,246 @@ class ProductVariant(models.Model):
         return f"{self.product.name_ar} - {self.name}"
 
 
-class Shipping(models.Model):
-    wilaya_id = models.CharField(max_length=10, unique=True)
-    name_ar = models.CharField(max_length=255)
-    name_fr = models.CharField(max_length=255)
-    stop_desk_price = models.DecimalField(max_digits=10, decimal_places=2, default=400)
-    home_delivery_price = models.DecimalField(max_digits=10, decimal_places=2, default=700)
+class ProductMaterial(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='available_materials')
+    material = models.ForeignKey('Material', on_delete=models.CASCADE, related_name='product_assignments')
     is_active = models.BooleanField(default=True)
-    regions = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.name_ar
+        return f"{self.product.name_ar} - {self.material.name_ar}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['product']),
+            models.Index(fields=['material']),
+            models.Index(fields=['product', 'is_active']),
+            models.Index(fields=['material', 'is_active']),
+            models.Index(fields=['product', 'material']),
+        ]
+        unique_together = ['product', 'material']
+
+
+class ShippingMethod(models.Model):
+    """Shipping providers/methods table"""
+    PROVIDER_CHOICES = [
+        ('yalidine', 'Yalidine'),
+        ('zr_express', 'ZR Express'),
+        ('fedex', 'FedEx'),
+        ('dhl', 'DHL'),
+        ('aramex', 'Aramex'),
+        ('local_post', 'Local Post'),
+        ('custom', 'Custom'),
+    ]
+    
+    SERVICE_TYPE_CHOICES = [
+        ('home', 'Home Delivery'),
+        ('desk', 'Stop Desk'),
+        ('express', 'Express Delivery'),
+        ('economy', 'Economy Delivery'),
+    ]
+    
+    name = models.CharField(max_length=100, verbose_name='Provider Name')
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES, verbose_name='Provider')
+    service_type = models.CharField(max_length=20, choices=SERVICE_TYPE_CHOICES, verbose_name='Service Type')
+    expected_delivery_time = models.IntegerField(verbose_name='Expected Delivery Time (days)')
+    logo = models.ImageField(upload_to='shipping_logos/', null=True, blank=True, verbose_name='Logo')
+    description = models.TextField(blank=True, verbose_name='Description')
+    is_active = models.BooleanField(default=True, verbose_name='Is Active')
+    
+    # Tracking and API integration
+    tracking_url_template = models.URLField(blank=True, verbose_name='Tracking URL Template')
+    api_endpoint = models.URLField(blank=True, verbose_name='API Endpoint')
+    api_key = models.CharField(max_length=100, blank=True, verbose_name='API Key')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.get_service_type_display()})"
+
+    class Meta:
+        verbose_name = 'Shipping Method'
+        verbose_name_plural = 'Shipping Methods'
+        ordering = ['provider', 'service_type']
+        indexes = [
+            models.Index(fields=['provider', 'service_type']),
+            models.Index(fields=['is_active']),
+        ]
+
+
+class ShippingPrice(models.Model):
+    """Shipping prices table linking wilayas with shipping methods"""
+    wilaya = models.ForeignKey('Shipping', on_delete=models.CASCADE, related_name='shipping_prices')
+    shipping_method = models.ForeignKey('ShippingMethod', on_delete=models.CASCADE, related_name='prices')
+    
+    home_delivery_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Home Delivery Price')
+    stop_desk_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Stop Desk Price')
+    express_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='Express Price')
+    
+    # Additional pricing options
+    free_shipping_minimum = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name='Free Shipping Minimum')
+    weight_surcharge = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Weight Surcharge (per kg)')
+    volume_surcharge = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Volume Surcharge (per m³)')
+    
+    # Service level options
+    cod_available = models.BooleanField(default=True, verbose_name='COD Available')
+    insurance_available = models.BooleanField(default=False, verbose_name='Insurance Available')
+    tracking_available = models.BooleanField(default=True, verbose_name='Tracking Available')
+    
+    is_active = models.BooleanField(default=True, verbose_name='Is Active')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.wilaya.name_ar} - {self.shipping_method.name}"
+
+    class Meta:
+        verbose_name = 'Shipping Price'
+        verbose_name_plural = 'Shipping Prices'
+        unique_together = ['wilaya', 'shipping_method']
+        indexes = [
+            models.Index(fields=['wilaya', 'shipping_method']),
+            models.Index(fields=['is_active']),
+            models.Index(fields=['home_delivery_price']),
+            models.Index(fields=['stop_desk_price']),
+        ]
+
+
+class Shipping(models.Model):
+    """Enhanced Shipping model for wilayas"""
+    wilaya_id = models.CharField(max_length=10, unique=True)
+    wilaya_code = models.IntegerField(help_text="رقم الولاية (1-58)")
+    name_ar = models.CharField(max_length=255)
+    name_en = models.CharField(max_length=255)
+    is_active = models.BooleanField(default=True)
+    regions = models.JSONField(default=list, blank=True)
+    
+    # Google Maps Integration
+    pickup_latitude = models.DecimalField(
+        max_digits=22,
+        decimal_places=16,
+        null=True,
+        blank=True,
+        verbose_name='خط عرض نقطة الاستلام',
+        help_text='إحداثيات خط العرض لنقطة الاستلام أو مركز التوزيع'
+    )
+    pickup_longitude = models.DecimalField(
+        max_digits=22,
+        decimal_places=16,
+        null=True,
+        blank=True,
+        verbose_name='خط طول نقطة الاستلام',
+        help_text='إحداثيات خط الطول لنقطة الاستلام أو مركز التوزيع'
+    )
+    radius_km = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name='نطاق التوصيل بالكيلومتر',
+        help_text='نطاق التوصيل بالكيلومتر حول المقر الرئيسي'
+    )
+    maps_url = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name='رابط الخريطة',
+        help_text='رابط مباشر لخرائط جوجل لنقطة الاستلام'
+    )
+    
+    # Organization integration
+    base_city = models.ForeignKey(
+        'api_organization.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='base_wilayas',
+        verbose_name='Base City Organization'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name_ar} ({self.wilaya_code})"
+    
+    class Meta:
+        ordering = ['wilaya_code']
+        indexes = [
+            models.Index(fields=['wilaya_id']),
+            models.Index(fields=['wilaya_code']),
+            models.Index(fields=['is_active']),
+        ]
+    
+    def get_available_shipping_methods(self):
+        """Get available shipping methods for this wilaya"""
+        return ShippingPrice.objects.filter(
+            wilaya=self,
+            is_active=True,
+            shipping_method__is_active=True
+        ).select_related('shipping_method')
+    
+    def get_delivery_price(self, service_type='home', method_id=None):
+        """Get price based on service type and optional method"""
+        if method_id:
+            try:
+                price = ShippingPrice.objects.get(
+                    wilaya=self,
+                    shipping_method_id=method_id,
+                    is_active=True
+                )
+                if service_type == 'home':
+                    return price.home_delivery_price
+                elif service_type == 'desk':
+                    return price.stop_desk_price
+                elif service_type == 'express' and price.express_price:
+                    return price.express_price
+                return price.home_delivery_price
+            except ShippingPrice.DoesNotExist:
+                return 0
+        
+        # Get best price for service type
+        prices = ShippingPrice.objects.filter(
+            wilaya=self,
+            is_active=True,
+            shipping_method__is_active=True
+        ).select_related('shipping_method')
+        
+        if service_type == 'home':
+            return min(p.home_delivery_price for p in prices) if prices else 0
+        elif service_type == 'desk':
+            return min(p.stop_desk_price for p in prices) if prices else 0
+        elif service_type == 'express':
+            express_prices = [p.express_price for p in prices if p.express_price]
+            return min(express_prices) if express_prices else 0
+        
+        return 0
+    
+    def is_free_shipping_eligible(self, order_total, method_id=None):
+        """Check if order qualifies for free shipping"""
+        if method_id:
+            try:
+                price = ShippingPrice.objects.get(
+                    wilaya=self,
+                    shipping_method_id=method_id,
+                    is_active=True
+                )
+                return price.free_shipping_minimum and order_total >= price.free_shipping_minimum
+            except ShippingPrice.DoesNotExist:
+                return False
+        
+        # Check any method
+        prices = ShippingPrice.objects.filter(
+            wilaya=self,
+            is_active=True,
+            shipping_method__is_active=True,
+            free_shipping_minimum__isnull=False
+        ).select_related('shipping_method')
+        
+        return any(
+            price.free_shipping_minimum and order_total >= price.free_shipping_minimum
+            for price in prices
+        )
 
 
 class Order(models.Model):
@@ -262,16 +498,125 @@ class Coupon(models.Model):
 
 
 class CartItem(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cart_items')
+    DELIVERY_TYPES = [
+        ('home', 'Home Delivery'),
+        ('stop_desk', 'Stop Desk'),
+        ('express', 'Express Delivery'),
+    ]
+    
+    # User association (optional for guest users)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cart_items', null=True, blank=True)
+    session_id = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    
+    # Product information
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     material = models.ForeignKey(Material, on_delete=models.SET_NULL, blank=True, null=True)
     quantity = models.IntegerField(default=1)
     options = models.JSONField(default=dict, blank=True)
+    
+    # Custom dimensions for vinyl products
+    width = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    height = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    dimension_unit = models.CharField(max_length=10, default='cm')
+    
+    # Pricing snapshot (to handle price changes)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    material_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Shipping information
+    delivery_type = models.CharField(max_length=20, choices=DELIVERY_TYPES, default='home')
+    wilaya = models.ForeignKey('Shipping', on_delete=models.SET_NULL, null=True, blank=True)
+    shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Coupon applied
+    applied_coupon = models.ForeignKey('Coupon', on_delete=models.SET_NULL, null=True, blank=True)
+    coupon_discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.product.name_ar}"
+        identifier = self.user.username if self.user else self.session_id
+        return f"{identifier} - {self.product.name_ar}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['session_id', 'created_at']),
+            models.Index(fields=['product']),
+            models.Index(fields=['updated_at']),
+        ]
+        unique_together = [
+            ['user', 'product', 'material', 'width', 'height'],
+            ['session_id', 'product', 'material', 'width', 'height']
+        ]
+
+    @property
+    def subtotal(self):
+        """Calculate subtotal for this cart item"""
+        return (self.unit_price + self.material_price) * self.quantity
+
+    @property
+    def total_with_discount(self):
+        """Calculate total after discount"""
+        subtotal = self.subtotal
+        return max(0, subtotal - self.discount_amount - self.coupon_discount)
+
+    @property
+    def final_total(self):
+        """Calculate final total including shipping"""
+        return self.total_with_discount + self.shipping_cost
+
+    @property
+    def is_available(self):
+        """Check if product is available"""
+        return self.product.is_active and self.product.stock >= self.quantity
+
+    @property
+    def max_quantity(self):
+        """Get maximum quantity available"""
+        return self.product.stock
+
+    def calculate_shipping_cost(self, wilaya, delivery_type='home'):
+        """Calculate shipping cost based on wilaya and delivery type"""
+        if wilaya:
+            if delivery_type == 'express' and wilaya.express_delivery_price:
+                return wilaya.express_delivery_price
+            elif delivery_type == 'stop_desk':
+                return wilaya.stop_desk_price
+            else:
+                return wilaya.home_delivery_price
+        return 0
+
+    def apply_coupon(self, coupon):
+        """Apply coupon to this cart item"""
+        if coupon and coupon.is_active:
+            if coupon.discount_type == 'percentage':
+                self.coupon_discount = self.subtotal * (coupon.discount_value / 100)
+            else:  # fixed amount
+                self.coupon_discount = min(coupon.discount_value, self.subtotal)
+            self.applied_coupon = coupon
+            self.save()
+
+    def update_pricing(self):
+        """Update pricing based on current product/material prices"""
+        self.unit_price = self.product.base_price
+        if self.material:
+            # Calculate material price based on dimensions
+            if self.width and self.height:
+                area_m2 = (self.width * self.height) / 10000  # Convert cm² to m²
+                self.material_price = self.material.price_per_m2 * area_m2
+            else:
+                self.material_price = self.material.price_per_m2
+        self.save()
+
+    def merge_with(self, other_cart_item):
+        """Merge this cart item with another (for guest cart merging)"""
+        self.quantity += other_cart_item.quantity
+        self.options.update(other_cart_item.options)
+        self.save()
 
 
 class Wishlist(models.Model):
@@ -352,23 +697,144 @@ class Design(models.Model):
 
 
 class Notification(models.Model):
+    # Enhanced notification types covering all business domains
+    SENDER_CHOICES = [
+        ('system', 'System'),
+        ('admin', 'Administrator'),
+        ('manager', 'Manager'),
+        ('user', 'User'),
+    ]
+    
+    RECIPIENT_CHOICES = [
+        ('user', 'Specific User'),
+        ('group', 'User Group'),
+        ('all', 'All Users'),
+        ('role', 'By Role'),
+    ]
+    
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('critical', 'Critical'),
+    ]
+    
+    CATEGORY_CHOICES = [
+        ('finance', 'Finance'),
+        ('inventory', 'Inventory'),
+        ('order', 'Order'),
+        ('security', 'Security'),
+        ('marketing', 'Marketing'),
+        ('system', 'System'),
+        ('logistics', 'Logistics'),
+        ('customer_service', 'Customer Service'),
+    ]
+    
     TYPE_CHOICES = [
-        ('info', 'Info'),
-        ('success', 'Success'),
-        ('warning', 'Warning'),
-        ('error', 'Error'),
+        # Finance
+        ('payment_success', 'Payment Successful'),
+        ('payment_failed', 'Payment Failed'),
+        ('refund_processed', 'Refund Processed'),
+        ('ccp_received', 'CCP Transfer Received'),
+        ('coupon_applied', 'Coupon Applied'),
+        ('coupon_expired', 'Coupon Expired'),
+        
+        # Orders
+        ('order_created', 'Order Created'),
+        ('order_confirmed', 'Order Confirmed'),
+        ('order_cancelled', 'Order Cancelled'),
+        ('order_shipped', 'Order Shipped'),
+        ('order_delivered', 'Order Delivered'),
+        ('order_returned', 'Order Returned'),
+        ('order_modified', 'Order Modified'),
+        
+        # Inventory
+        ('stock_low', 'Low Stock Alert'),
+        ('stock_out', 'Out of Stock'),
+        ('product_added', 'New Product Added'),
+        ('product_updated', 'Product Updated'),
+        
+        # Security
+        ('login_new_device', 'Login from New Device'),
+        ('password_changed', 'Password Changed'),
+        ('login_failed', 'Failed Login Attempt'),
+        ('account_locked', 'Account Locked'),
+        
+        # Logistics
+        ('shipping_confirmed', 'Shipping Confirmed'),
+        ('shipping_delayed', 'Shipping Delayed'),
+        ('delivery_failed', 'Delivery Failed'),
+        ('package_received', 'Package Received at Distribution Center'),
+        
+        # System
+        ('system_maintenance', 'System Maintenance'),
+        ('system_update', 'System Update'),
+        ('database_backup', 'Database Backup'),
+        
+        # Marketing
+        ('promotion_launched', 'New Promotion'),
+        ('newsletter_sent', 'Newsletter Sent'),
+        ('campaign_completed', 'Marketing Campaign Completed'),
+        
+        # Customer Service
+        ('support_ticket_created', 'Support Ticket Created'),
+        ('support_ticket_resolved', 'Support Ticket Resolved'),
+        ('feedback_received', 'Customer Feedback Received'),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    # Core fields
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications', blank=True, null=True)
     title = models.CharField(max_length=255)
     message = models.TextField()
-    type = models.CharField(max_length=50, choices=TYPE_CHOICES, default='info')
+    type = models.CharField(max_length=50, choices=TYPE_CHOICES)
+    
+    # Enhanced fields
+    sender = models.CharField(max_length=20, choices=SENDER_CHOICES, default='system')
+    recipient_type = models.CharField(max_length=20, choices=RECIPIENT_CHOICES, default='user')
+    recipient_group = models.CharField(max_length=100, blank=True, null=True)  # For group/role targeting
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='system')
+    
+    # Metadata and technical fields
+    metadata = models.JSONField(default=dict, blank=True, help_text="Technical data like order_id, invoice_id, etc.")
+    action_url = models.URLField(blank=True, null=True, help_text="Direct link to related resource")
+    action_text = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Status and timing
     is_read = models.BooleanField(default=False)
+    is_archived = models.BooleanField(default=False)
+    read_at = models.DateTimeField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    
+    # Additional data
     data = models.JSONField(default=dict, blank=True)
+    
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.title}"
+        return f"{self.user.username if self.user else 'Broadcast'} - {self.title}"
+
+    def mark_as_read(self):
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at'])
+
+    def archive(self):
+        self.is_archived = True
+        self.save(update_fields=['is_archived'])
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['recipient_type', 'priority']),
+            models.Index(fields=['category', 'created_at']),
+            models.Index(fields=['type', 'created_at']),
+            models.Index(fields=['expires_at']),
+        ]
+        ordering = ['-created_at']
 
 
 class Alert(models.Model):

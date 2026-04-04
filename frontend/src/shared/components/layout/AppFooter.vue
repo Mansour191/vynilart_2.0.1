@@ -10,7 +10,7 @@
               <span class="text-h6">{{ $t('aboutTitle') }}</span>
             </v-card-title>
             <v-card-text>
-              <p class="footer-about-text">{{ footerData.aboutText || $t('footerAboutText') }}</p>
+              <p class="footer-about-text">{{ organizationAbout || footerData.aboutText || $t('footerAboutText') }}</p>
               
               <!-- Stats Mini -->
               <v-row class="footer-stats-mini mt-4" density="compact">
@@ -128,8 +128,8 @@
                     <v-avatar size="32" color="primary">
                       <v-icon size="16" color="white">mdi-email</v-icon>
                     </v-avatar>
-                    <a :href="`mailto:${footerData.email || 'remadnamansour7@gmail.com'}`" class="text-decoration-none">
-                      {{ footerData.email || 'remadnamansour7@gmail.com' }}
+                    <a :href="`mailto:${contactInfo.email || 'remadnamansour7@gmail.com'}`" class="text-decoration-none">
+                      {{ contactInfo.email || 'remadnamansour7@gmail.com' }}
                     </a>
                   </v-card-text>
                 </v-card>
@@ -143,8 +143,8 @@
                     <v-avatar size="32" color="primary">
                       <v-icon size="16" color="white">mdi-phone</v-icon>
                     </v-avatar>
-                    <a :href="`tel:${footerData.phone || '0663140341'}`" class="text-decoration-none">
-                      {{ footerData.phone || '0663140341' }}
+                    <a :href="`tel:${contactInfo.phone1 || '0663140341'}`" class="text-decoration-none">
+                      {{ contactInfo.phone1 || '0663140341' }}
                     </a>
                   </v-card-text>
                 </v-card>
@@ -155,13 +155,13 @@
                 <h5 class="text-subtitle-2 mb-3">{{ $t('followUsTitle') }}</h5>
                 <div class="d-flex flex-wrap ga-2">
                   <v-btn
-                    v-for="social in socialLinks"
-                    :key="social.name"
-                    :href="social.link"
+                    v-for="social in publicSocialLinks"
+                    :key="social.id"
+                    :href="social.url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    :icon="social.icon"
-                    :color="getSocialColor(social.name)"
+                    :icon="social.fa_icon_class || social.icon_class"
+                    :color="getSocialColor(social.platform_name)"
                     variant="elevated"
                     size="small"
                     class="social-btn"
@@ -215,9 +215,16 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAppConfig } from '@/composables/useAppConfig';
 import FooterService from '@/shared/integration/services/FooterService';
 
 const { t } = useI18n();
+const { 
+  organizationAbout, 
+  contactInfo, 
+  publicSocialLinks, 
+  initialize: initializeOrg 
+} = useAppConfig();
 
 // State
 const footerData = ref({});
@@ -234,18 +241,6 @@ const productItems = ref([
   { route: '/cars', key: 'cars' },
 ]);
 
-const socialLinks = ref([
-  {
-    name: 'facebook',
-    icon: 'mdi-facebook',
-    link: 'https://www.facebook.com/profile.php?id=61588391030740',
-  },
-  { name: 'youtube', icon: 'mdi-youtube', link: 'https://www.youtube.com/@store_paclos' },
-  { name: 'whatsapp', icon: 'mdi-whatsapp', link: 'https://wa.me/213663140341' },
-  { name: 'instagram', icon: 'mdi-instagram', link: '#' },
-  { name: 'tiktok', icon: 'mdi-tiktok', link: 'https://www.tiktok.com/@mansour.2026' },
-  { name: 'email', icon: 'mdi-email', link: 'mailto:remadnamansour7@gmail.com' },
-]);
 
 // Methods
 const loadFooterData = async () => {
@@ -261,7 +256,8 @@ const loadFooterData = async () => {
         productItems.value = response.data.productItems;
       }
       if (response.data?.socialLinks) {
-        socialLinks.value = response.data.socialLinks;
+        // Legacy support - social links are now handled by organization store
+        console.log('📦 Legacy social links found, but using dynamic store data instead');
       }
       
       console.log('✅ Footer data loaded successfully:', footerData.value);
@@ -291,8 +287,12 @@ const getSocialColor = (socialName) => {
 };
 
 // Lifecycle
-onMounted(() => {
-  loadFooterData();
+onMounted(async () => {
+  // Initialize organization data
+  await initializeOrg();
+  
+  // Load additional footer data (legacy support)
+  await loadFooterData();
 });
 </script>
 

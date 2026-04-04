@@ -7,6 +7,9 @@
     "paths": {
       "@/*": [
         "src/*"
+      ],
+      "@/integration/*": [
+        "src/shared/integration/*"
       ]
     },
     "lib": [

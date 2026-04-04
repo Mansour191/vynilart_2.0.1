@@ -12,7 +12,7 @@
 // OLD: ERPNextService.syncOrder(id)
 // NEW: GraphQLERPNextService.syncWithERPNext('orders')
 
-import { useGraphQLMutation } from '@/composables/useGraphQL';
+import { useGraphQLMutation } from '@/shared/composables/useGraphQL';
 
 class ERPNextService {
   constructor() {

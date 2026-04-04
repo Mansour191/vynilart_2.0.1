@@ -1,0 +1,206 @@
+import { gql } from '@apollo/client/core';
+
+// Get all active shipping zones
+export const ACTIVE_SHIPPING_ZONES_QUERY = gql`
+  query GetActiveShippingZones {
+    activeShippingZones {
+      edges {
+        node {
+          id
+          wilayaId
+          nameAr
+          nameFr
+          stopDeskPrice
+          homeDeliveryPrice
+          isActive
+          regions
+          createdAt
+          updatedAt
+        }
+      }
+    }
+  }
+`;
+
+// Get shipping zone by ID
+export const SHIPPING_ZONE_QUERY = gql`
+  query GetShippingZone($id: ID!) {
+    shippingZone(id: $id) {
+      id
+      wilayaId
+      nameAr
+      nameFr
+      stopDeskPrice
+      homeDeliveryPrice
+      isActive
+      regions
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+// Get shipping zone by wilaya ID
+export const SHIPPING_ZONE_BY_WILAYA_QUERY = gql`
+  query GetShippingZoneByWilaya($wilayaId: String!) {
+    shippingZoneByWilaya(wilayaId: $wilayaId) {
+      id
+      wilayaId
+      nameAr
+      nameFr
+      stopDeskPrice
+      homeDeliveryPrice
+      isActive
+      regions
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+// Calculate shipping cost for order
+export const CALCULATE_SHIPPING_QUERY = gql`
+  query CalculateShipping($wilayaId: String!, $orderTotal: Float!, $deliveryType: String!) {
+    calculateShipping(wilayaId: $wilayaId, orderTotal: $orderTotal, deliveryType: $deliveryType) {
+      id
+      wilayaId
+      nameAr
+      nameFr
+      stopDeskPrice
+      homeDeliveryPrice
+      isActive
+      regions
+      calculatedPrice
+      estimatedDeliveryTime
+      deliveryOptions {
+        type
+        price
+        estimatedDays
+        description
+      }
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+// Get shipping zones with filtering
+export const SHIPPING_ZONES_QUERY = gql`
+  query GetShippingZones($filter: ShippingFilterInput, $first: Int, $after: String, $orderBy: String) {
+    shippingZones(filter: $filter, first: $first, after: $after, orderBy: $orderBy) {
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      edges {
+        node {
+          id
+          wilayaId
+          nameAr
+          nameFr
+          stopDeskPrice
+          homeDeliveryPrice
+          isActive
+          regions
+          createdAt
+          updatedAt
+        }
+        cursor
+      }
+    }
+  }
+`;
+
+// Create or update shipping zone
+export const CREATE_SHIPPING_ZONE_MUTATION = gql`
+  mutation CreateShippingZone($input: ShippingZoneInput!) {
+    createShippingZone(input: $input) {
+      success
+      message
+      shippingZone {
+        id
+        wilayaId
+        nameAr
+        nameFr
+        stopDeskPrice
+        homeDeliveryPrice
+        isActive
+        regions
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
+// Update shipping zone
+export const UPDATE_SHIPPING_ZONE_MUTATION = gql`
+  mutation UpdateShippingZone($id: ID!, $input: ShippingZoneInput!) {
+    updateShippingZone(id: $id, input: $input) {
+      success
+      message
+      shippingZone {
+        id
+        wilayaId
+        nameAr
+        nameFr
+        stopDeskPrice
+        homeDeliveryPrice
+        isActive
+        regions
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
+// Delete shipping zone
+export const DELETE_SHIPPING_ZONE_MUTATION = gql`
+  mutation DeleteShippingZone($id: ID!) {
+    deleteShippingZone(id: $id) {
+      success
+      message
+    }
+  }
+`;
+
+// Bulk update shipping zones
+export const BULK_UPDATE_SHIPPING_MUTATION = gql`
+  mutation BulkUpdateShipping($updates: [ShippingUpdateInput]!) {
+    bulkUpdateShipping(updates: $updates) {
+      success
+      message
+      updatedCount
+      errors {
+        id
+        field
+        message
+      }
+    }
+  }
+`;
+
+// Toggle shipping zone active status
+export const TOGGLE_SHIPPING_ZONE_MUTATION = gql`
+  mutation ToggleShippingZone($id: ID!, $isActive: Boolean!) {
+    toggleShippingZone(id: $id, isActive: $isActive) {
+      success
+      message
+      shippingZone {
+        id
+        wilayaId
+        nameAr
+        nameFr
+        stopDeskPrice
+        homeDeliveryPrice
+        isActive
+        regions
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;

@@ -28,13 +28,13 @@
             <div class="text-body-2 text-medium-emphasis mb-2">{{ $t('contactEmailLabel') }}</div>
             <div class="contact-value">
               <v-btn
-                href="mailto:remadnamansour7@gmail.com"
+                :href="`mailto:${contactInfo.email}`"
                 variant="text"
                 color="warning"
                 prepend-icon="mdi-email"
                 class="text-none"
               >
-                remadnamansour7@gmail.com
+                {{ contactInfo.email }}
               </v-btn>
             </div>
           </v-card-text>
@@ -52,13 +52,13 @@
             <div class="text-body-2 text-medium-emphasis mb-2">{{ $t('contactPhoneLabel') }}</div>
             <div class="contact-value">
               <v-btn
-                href="tel:0663140341"
+                :href="`tel:${contactInfo.phone1}`"
                 variant="text"
                 color="warning"
                 prepend-icon="mdi-phone"
                 class="text-none"
               >
-                0663140341
+                {{ contactInfo.phone1 }}
               </v-btn>
             </div>
           </v-card-text>
@@ -76,20 +76,61 @@
             <div class="text-body-2 text-medium-emphasis mb-2">{{ $t('contactWhatsappLabel') }}</div>
             <div class="contact-value">
               <v-btn
-                href="https://wa.me/213663140341"
+                :href="`https://wa.me/213${contactInfo.phone1?.replace(/^0/, '')}`"
                 target="_blank"
                 variant="text"
                 color="success"
                 prepend-icon="mdi-whatsapp"
                 class="text-none"
               >
-                0663140341
+                {{ contactInfo.phone1 }}
               </v-btn>
             </div>
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Google Maps -->
+    <v-card elevation="6" class="maps-card mb-8" v-if="contactInfo.coordinates?.latitude && contactInfo.coordinates?.longitude">
+      <v-card-title class="d-flex align-center ga-2 pa-4">
+        <v-icon color="warning">mdi-map-marker</v-icon>
+        <span class="text-h5">{{ $t('ourLocation') }}</span>
+      </v-card-title>
+      <v-card-text class="pa-0">
+        <div class="map-container">
+          <iframe
+            :src="`https://maps.google.com/maps?q=${contactInfo.coordinates.latitude},${contactInfo.coordinates.longitude}&z=15&output=embed`"
+            width="100%"
+            height="400"
+            style="border:0;"
+            allowfullscreen=""
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+          ></iframe>
+        </div>
+        <v-card-actions class="pa-4">
+          <v-btn
+            :href="contactInfo.mapsUrl || `https://maps.google.com/?q=${contactInfo.coordinates.latitude},${contactInfo.coordinates.longitude}`"
+            target="_blank"
+            color="warning"
+            variant="elevated"
+            prepend-icon="mdi-open-in-new"
+          >
+            {{ $t('openInGoogleMaps') }}
+          </v-btn>
+          <v-spacer></v-spacer>
+          <v-btn
+            v-if="contactInfo.address"
+            color="primary"
+            variant="outlined"
+            prepend-icon="mdi-map-marker-multiple"
+          >
+            {{ contactInfo.address }}
+          </v-btn>
+        </v-card-actions>
+      </v-card-text>
+    </v-card>
 
     <!-- Facebook Card -->
     <v-card elevation="6" class="facebook-card mb-8" color="blue-darken-4">
@@ -133,10 +174,17 @@
   </v-container>
 </template>
 
-<script>
-export default {
-  name: 'ContactView',
-};
+<script setup>
+import { onMounted } from 'vue';
+import { useAppConfig } from '@/composables/useAppConfig';
+
+// Get organization data
+const { contactInfo, initialize: initializeOrg } = useAppConfig();
+
+// Initialize organization data on mount
+onMounted(async () => {
+  await initializeOrg();
+});
 </script>
 
 <style scoped>
@@ -155,5 +203,24 @@ export default {
 .v-card--hover {
   transition: all 0.3s ease;
   will-change: transform, box-shadow;
+}
+
+/* Map container styling */
+.map-container {
+  position: relative;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.map-container iframe {
+  border: none;
+  border-radius: 8px;
+}
+
+.maps-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(212, 175, 55, 0.2);
 }
 </style>

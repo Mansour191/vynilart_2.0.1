@@ -12,7 +12,7 @@
       <!-- Logo -->
       <div class="site-title">
         <router-link to="/" class="text-decoration-none">
-          <span class="site-logo">{{ $t('siteTitle') }}</span>
+          <span class="site-logo">{{ organizationName || $t('siteTitle') }}</span>
         </router-link>
       </div>
 
@@ -119,10 +119,23 @@
           icon
           variant="outlined"
           class="action-btn logged-in"
-          :to="authStore.role === 'admin' ? '/dashboard' : (authStore.role === 'investor' ? '/investor' : '/profile')"
+          :to="currentUserRole === 'admin' ? '/dashboard' : (currentUserRole === 'investor' ? '/investor' : '/profile')"
           :title="userDisplayName"
         >
-          <v-icon icon="mdi-check-circle" size="18" />
+          <v-avatar size="32" class="user-avatar">
+            <v-img
+              v-if="user?.profile?.avatar"
+              :src="user.profile.avatar"
+              :alt="userDisplayName"
+              cover
+            />
+            <v-icon
+              v-else
+              icon="mdi-account-circle"
+              size="24"
+              color="primary"
+            />
+          </v-avatar>
         </v-btn>
 
         <!-- Mobile Menu Toggle -->
@@ -143,8 +156,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useAuthStore } from '@/shared/store/auth';
+import { useAuth } from '@/composables/useAuth';
+import { useCategories } from '@/composables/useCategories';
 import { useI18n } from 'vue-i18n';
+import { useAppConfig } from '@/composables/useAppConfig';
 import NotificationsDropdown from '@/shared/components/common/NotificationsDropdown.vue';
 import LanguageSwitcher from '@/shared/components/common/LanguageSwitcher.vue';
 
@@ -158,8 +173,16 @@ const props = defineProps({
 const emit = defineEmits(['toggle-mobile-menu', 'change-language', 'toggle-theme']);
 
 const router = useRouter();
-const authStore = useAuthStore();
+const { 
+  isAuthenticated, 
+  user, 
+  currentUserRole, 
+  isAdmin, 
+  isInvestor 
+} = useAuth();
+const { rootCategories, loading: categoriesLoading } = useCategories();
 const { t } = useI18n();
+const { organizationName, initialize: initializeOrg } = useAppConfig();
 
 // State
 const showLanguageMenu = ref(false);
@@ -172,79 +195,56 @@ const languages = [
 ];
 
 // Navigation items configuration
-const navigationItems = computed(() => [
-  {
-    title: 'home',
-    to: '/',
-    icon: 'mdi-home'
-  },
-  {
+const navigationItems = computed(() => {
+  const staticItems = [
+    {
+      title: 'home',
+      to: '/',
+      icon: 'mdi-home'
+    },
+    {
+      title: 'gallery',
+      to: '/gallery',
+      icon: 'mdi-image-multiple'
+    },
+    {
+      title: 'about',
+      to: '/about',
+      icon: 'mdi-account-group'
+    },
+    {
+      title: 'contact',
+      to: '/contact',
+      icon: 'mdi-phone'
+    }
+  ];
+
+  // Add categories if loaded
+  const categoriesItem = {
     title: 'products',
     icon: 'mdi-view-grid',
-    children: [
-      {
-        title: 'furniture',
-        to: '/furniture',
-        icon: 'mdi-sofa'
-      },
-      {
-        title: 'doors',
-        to: '/doors',
-        icon: 'mdi-door-open'
-      },
-      {
-        title: 'walls',
-        to: '/walls',
-        icon: 'mdi-roller-shade'
-      },
-      {
-        title: 'ceilings',
-        to: '/ceilings',
-        icon: 'mdi-arrow-up-bold'
-      },
-      {
-        title: 'tiles',
-        to: '/tiles',
-        icon: 'mdi-grid'
-      },
-      {
-        title: 'kitchens',
-        to: '/kitchens',
-        icon: 'mdi-silverware-fork-knife'
-      },
-      {
-        title: 'cars',
-        to: '/cars',
-        icon: 'mdi-car'
-      }
-    ]
-  },
-  {
-    title: 'gallery',
-    to: '/gallery',
-    icon: 'mdi-image-multiple'
-  },
-  {
-    title: 'about',
-    to: '/about',
-    icon: 'mdi-account-group'
-  },
-  {
-    title: 'contact',
-    to: '/contact',
-    icon: 'mdi-phone'
-  }
-]);
+    children: rootCategories.value.map(category => ({
+      title: category.slug, // Use slug as translation key
+      to: `/category/${category.slug}`,
+      icon: category.icon || 'mdi-folder'
+    }))
+  };
+
+  // Insert categories after home and before gallery
+  return [
+    staticItems[0], // home
+    categoriesItem,
+    ...staticItems.slice(1) // gallery, about, contact
+  ];
+});
 
 // Computed
-const isAuthenticated = computed(() => authStore.isAuthenticated);
 const currentLang = computed(() => locale.value);
-const currentUser = computed(() => authStore.user);
 const wishlistCount = computed(() => 0); // TODO: Implement wishlist count in DRF Auth Store
 
 const userDisplayName = computed(() => {
-  if (authStore.user) {
-    return authStore.user.firstName || authStore.user.username || 'مستخدم';
+  if (user.value) {
+    return user.value.firstName || user.value.username || 'مستخدم';
   }
   return 'ضيف';
 });
@@ -265,9 +265,11 @@ const toggleTheme = () => {
   emit('toggle-theme');
 };
 
-// Initialize auth store on mount
-onMounted(() => {
-  authStore.initializeAuth();
+// Initialize auth state and organization data on mount
+onMounted(async () => {
+  // Auth state is automatically initialized by useAuth composable
+  // Initialize organization data
+  await initializeOrg();
 });
 </script>
 

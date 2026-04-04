@@ -1,6 +1,6 @@
 // src/plugins/primevue.js
 import PrimeVue from 'primevue/config';
-import Aura from '@primeuix/themes/aura'; // تأكد من استخدام @primeuix حسب package.json
+import Aura from '@primevue/themes/aura';
 
 // استيراد المكونات الأساسية لـ Paclos
 import Button from 'primevue/button';

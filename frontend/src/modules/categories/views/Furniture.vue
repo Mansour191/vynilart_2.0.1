@@ -1,6 +1,6 @@
 <template>
   <CategoryTemplate
-    :icon="categoryData?.icon || 'fa-solid fa-couch'"
+    :icon="categoryData?.icon || 'mdi-sofa'"
     titleKey="furnitureTitle"
     descriptionKey="furnitureDescription"
     labelKey="furnitureLabel"
@@ -11,27 +11,46 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import CategoryTemplate from '@/shared/components/CategoryTemplate.vue';
-import CategoryService from '@/integration/services/CategoryService';
+import { useCategories } from '@/composables/useCategories';
+
+const route = useRoute();
+const { 
+  categories, 
+  getCategoryBySlug, 
+  findCategoryBySlug, 
+  getChildCategories,
+  loading,
+  error 
+} = useCategories();
 
 const categoryData = ref(null);
 const subCategories = ref([]);
 
-onMounted(async () => {
-  try {
-    // جلب بيانات الفئة من قاعدة البيانات
-    const category = await CategoryService.getCategoryBySlug('furniture');
-    categoryData.value = category;
-    
-    // جلب الفئات الفرعية
-    const subCats = await CategoryService.getSubCategories('furniture');
-    subCategories.value = subCats;
-    
-    console.log('✅ Furniture category loaded:', category);
-    console.log('✅ Furniture subcategories loaded:', subCats);
-  } catch (error) {
-    console.error('❌ Error loading furniture category:', error);
+// Computed properties
+const furnitureCategory = computed(() => {
+  return findCategoryBySlug('furniture') || 
+         categories.value.find(cat => cat.slug === 'furniture');
+});
+
+// Watch for categories to load
+watch(() => categories.value, (newCategories) => {
+  if (newCategories && newCategories.length > 0) {
+    const furniture = findCategoryBySlug('furniture');
+    if (furniture) {
+      categoryData.value = furniture;
+      subCategories.value = getChildCategories(furniture.id);
+      console.log('✅ Furniture category loaded:', furniture);
+      console.log('✅ Furniture subcategories loaded:', subCategories.value);
+    }
   }
+}, { immediate: true });
+
+// Initialize
+onMounted(() => {
+  // Categories are automatically loaded by useCategories composable
+  // The watcher will handle the rest
 });
 </script>

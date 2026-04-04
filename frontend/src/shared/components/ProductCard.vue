@@ -8,8 +8,8 @@
     <!-- Product Image with Badges -->
     <div class="product-image-container position-relative">
       <v-img 
-        :src="product.image" 
-        :alt="product.title" 
+        :src="productMainImage" 
+        :alt="productAltText" 
         :aspect-ratio="16/12"
         cover
         class="product-image"
@@ -267,6 +267,33 @@ const isOnSale = computed(() => {
 const discount = computed(() => {
   if (!isOnSale.value) return 0;
   return Math.round(((originalPrice.value - currentPrice.value) / originalPrice.value) * 100);
+});
+
+// Image handling computed properties
+const productMainImage = computed(() => {
+  if (props.product.images && props.product.images.length > 0) {
+    // Find main image first
+    const mainImage = props.product.images.find(img => img.isMain);
+    if (mainImage) return mainImage.imageUrl;
+    
+    // Return first image if no main image
+    return props.product.images[0].imageUrl;
+  }
+  
+  // Fallback to single image field or placeholder
+  return props.product.image || '/placeholder-product.jpg';
+});
+
+const productAltText = computed(() => {
+  if (props.product.images && props.product.images.length > 0) {
+    const mainImage = props.product.images.find(img => img.isMain);
+    if (mainImage && mainImage.altText) return mainImage.altText;
+    
+    if (props.product.images[0].altText) return props.product.images[0].altText;
+  }
+  
+  // Fallback to product name
+  return props.product.nameAr || props.product.nameEn || 'Product Image';
 });
 
 const pricingConfidence = computed(() => {

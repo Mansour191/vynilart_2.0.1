@@ -8,7 +8,7 @@
       style="cursor: zoom-in"
     >
       <v-img
-        :src="currentImage || images[0]"
+        :src="mainImage"
         :alt="title"
         aspect-ratio="1"
         cover
@@ -234,8 +234,58 @@ const canScrollLeft = ref(false);
 const canScrollRight = ref(false);
 
 // Computed
+const processedImages = computed(() => {
+  // Process images array to handle both old and new formats
+  if (!props.images || props.images.length === 0) {
+    return ['/placeholder-product.jpg'];
+  }
+  
+  return props.images.map(img => {
+    if (typeof img === 'string') {
+      return img; // Old format: string URLs
+    }
+    if (img.imageUrl) {
+      return img.imageUrl; // New format: ProductImage objects
+    }
+    return img;
+  });
+});
+
+const sortedImages = computed(() => {
+  // Sort images by sort_order if available, otherwise keep original order
+  if (!props.images || props.images.length === 0) {
+    return processedImages.value;
+  }
+  
+  return [...props.images]
+    .sort((a, b) => {
+      // Handle both string and object formats
+      const orderA = typeof a === 'object' ? (a.sortOrder || 0) : 0;
+      const orderB = typeof b === 'object' ? (b.sortOrder || 0) : 0;
+      return orderA - orderB;
+    })
+    .map(img => typeof img === 'object' ? img.imageUrl : img);
+});
+
+const mainImage = computed(() => {
+  // Find main image (is_main = true) or return first image
+  if (!props.images || props.images.length === 0) {
+    return processedImages.value[0];
+  }
+  
+  const mainImageObj = props.images.find(img => 
+    typeof img === 'object' && img.isMain
+  );
+  
+  if (mainImageObj) {
+    return mainImageObj.imageUrl;
+  }
+  
+  return sortedImages.value[0];
+});
+
 const lightboxImages = computed(() => {
-  return props.images.length > 0 ? props.images : [currentImage.value];
+  return sortedImages.value.length > 0 ? sortedImages.value : [mainImage.value];
 });
 
 // Methods
@@ -245,14 +295,22 @@ const selectImage = (img, index) => {
 };
 
 const nextImage = () => {
-  if (props.images.length <= 1) return;
+  if (sortedImages.value.length <= 1) return;
   
-  const nextIndex = (currentImageIndex.value + 1) % props.images.length;
+  const nextIndex = (currentImageIndex.value + 1) % sortedImages.value.length;
   currentImageIndex.value = nextIndex;
-  currentImage.value = props.images[nextIndex];
+  currentImage.value = sortedImages.value[nextIndex];
 };
 
 const previousImage = () => {
+  if (sortedImages.value.length <= 1) return;
+  
+  const prevIndex = currentImageIndex.value === 0 ? 
+    sortedImages.value.length - 1 : 
+    currentImageIndex.value - 1;
+  currentImageIndex.value = prevIndex;
+  currentImage.value = sortedImages.value[prevIndex];
+};
   if (props.images.length <= 1) return;
   
   const prevIndex = currentImageIndex.value === 0 ? props.images.length - 1 : currentImageIndex.value - 1;

@@ -72,10 +72,10 @@
               variant="elevated"
               size="large"
               prepend-icon="mdi-send"
-              :loading="sending"
+              :loading="sendingMutation"
               block
             >
-              {{ sending ? ($t('sending') || 'جاري الإرسال...') : ($t('sendMessage') || 'إرسال الرسالة') }}
+              {{ sendingMutation ? ($t('sending') || 'جاري الإرسال...') : ($t('sendMessage') || 'إرسال الرسالة') }}
             </v-btn>
           </v-col>
         </v-row>
@@ -103,7 +103,7 @@ import { reactive, ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required, email, minLength, helpers } from '@vuelidate/validators';
-import ContactService from '@/integration/services/ContactService';
+import { useSendContactForm } from '@/shared/composables/useGraphQL';
 
 const { t } = useI18n();
 
@@ -139,22 +139,33 @@ const v$ = useVuelidate(rules, contactForm);
 const sending = ref(false);
 const formStatus = ref(null);
 
+// GraphQL contact form mutation
+const { 
+  execute: sendContactForm, 
+  loading: sendingMutation, 
+  error: mutationError 
+} = useSendContactForm();
+
 const submitContactForm = async () => {
   const isFormCorrect = await v$.value.$validate();
   if (!isFormCorrect) return;
 
-  sending.value = true;
   formStatus.value = null;
   
   try {
-    // إرسال النموذج عبر API
-    const result = await ContactService.sendContactForm(contactForm);
+    // Use GraphQL mutation
+    const result = await sendContactForm({
+      name: contactForm.name,
+      email: contactForm.email,
+      phone: contactForm.phone,
+      message: contactForm.message
+    });
     
-    if (result.success) {
+    if (result?.sendContactForm?.success) {
       formStatus.value = {
         type: 'success',
         icon: 'mdi-check-circle',
-        message: result.message
+        message: 'تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.'
       };
       
       // إعادة تعيين النموذج
@@ -162,14 +173,14 @@ const submitContactForm = async () => {
       contactForm.email = '';
       contactForm.phone = '';
       contactForm.message = '';
-      v$.value.$reset();
       
-      console.log('✅ Contact form sent successfully:', result.data);
+      // إعادة تعيين التحقق
+      v$.value.$reset();
     } else {
       formStatus.value = {
         type: 'error',
         icon: 'mdi-alert-circle',
-        message: result.message
+        message: result?.sendContactForm?.message || 'فشل إرسال الرسالة. يرجى المحاولة مرة أخرى.'
       };
     }
   } catch (error) {
@@ -180,7 +191,6 @@ const submitContactForm = async () => {
       message: t('messageError') || 'حدث خطأ أثناء إرسال الرسالة'
     };
   } finally {
-    sending.value = false;
     setTimeout(() => {
       formStatus.value = null;
     }, 5000);

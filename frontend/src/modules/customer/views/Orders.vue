@@ -106,19 +106,22 @@
                 class="order-card h-100"
                 elevation="2"
                 hover
-                @click="viewOrderDetails(order.id)"
+                @click="viewOrderDetails(order)"
               >
                 <v-card-title class="d-flex align-center justify-space-between">
                   <div>
-                    <h3 class="text-h6">طلب #{{ order.id }}</h3>
+                    <h3 class="text-h6">{{ formatOrderNumber(order.orderNumber) }}</h3>
                     <p class="text-caption text-medium-emphasis">{{ formatDate(order.createdAt) }}</p>
                   </div>
                   <v-chip
-                    :color="getStatusColor(order.status)"
+                    :color="getOrderStatusInfo(order.status).color"
                     variant="tonal"
                     size="small"
                   >
-                    {{ getStatusText(order.status) }}
+                    <v-icon size="small" class="me-1">
+                      {{ getOrderStatusInfo(order.status).icon }}
+                    </v-icon>
+                    {{ getOrderStatusInfo(order.status).text }}
                   </v-chip>
                 </v-card-title>
 
@@ -326,51 +329,83 @@
   </v-main>
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import OrderService from '@/integration/services/OrderService';
+import { useOrders } from '@/composables/useOrders';
+import { useStore } from 'vuex';
+import { useI18n } from 'vue-i18n';
+
+// Composables
+const { 
+  userOrders, 
+  loading, 
+  error,
+  fetchUserOrders,
+  getOrderStatusInfo,
+  canCancelOrder,
+  formatOrderNumber,
+  formatPrice,
+  formatDate,
+  cancelOrder,
+  generateInvoice
+} = useOrders();
+
+const store = useStore();
+const { t } = useI18n();
 
 // Reactive data
 const overlayActive = ref(true);
-const loading = ref(false);
 const showSearch = ref(false);
 const searchQuery = ref('');
 const selectedFilter = ref('all');
 const showOrderDetails = ref(false);
 const selectedOrder = ref(null);
-
-const orders = ref([]);
+const cancellingOrder = ref(false);
+const generatingInvoice = ref(false);
 
 const filterOptions = [
-  { title: 'جميع الطلبات', value: 'all' },
-  { title: 'قيد الانتظار', value: 'pending' },
-  { title: 'قيد المعالجة', value: 'processing' },
-  { title: 'تم الشحن', value: 'shipped' },
-  { title: 'تم التسليم', value: 'delivered' },
-  { title: 'ملغي', value: 'cancelled' }
+  { title: t('allOrders') || 'جميع الطلبات', value: 'all' },
+  { title: t('pending') || 'قيد الانتظار', value: 'pending' },
+  { title: t('confirmed') || 'مؤكد', value: 'confirmed' },
+  { title: t('processing') || 'قيد المعالجة', value: 'processing' },
+  { title: t('shipped') || 'تم الشحن', value: 'shipped' },
+  { title: t('delivered') || 'تم التسليم', value: 'delivered' },
+  { title: t('cancelled') || 'ملغي', value: 'cancelled' }
 ];
 
 const orderItemsHeaders = [
-  { title: 'الصورة', key: 'image', sortable: false },
-  { title: 'المنتج', key: 'name' },
-  { title: 'الكمية', key: 'quantity' },
-  { title: 'السعر', key: 'price' },
-  { title: 'الإجمالي', key: 'total' }
+  { title: t('image') || 'الصورة', key: 'image', sortable: false },
+  { title: t('product') || 'المنتج', key: 'name' },
+  { title: t('quantity') || 'الكمية', key: 'quantity' },
+  { title: t('price') || 'السعر', key: 'price' },
+  { title: t('total') || 'الإجمالي', key: 'total' }
 ];
+
+// Computed
+const filteredOrders = computed(() => {
+  let orders = userOrders.value;
+  
+  // Apply status filter
+  if (selectedFilter.value !== 'all') {
+    orders = orders.filter(order => order.status === selectedFilter.value);
+  }
+  
+  // Apply search filter
+  if (searchQuery.value) {
+    const term = searchQuery.value.toLowerCase();
+    orders = orders.filter(order => 
+      order.orderNumber?.toLowerCase().includes(term) ||
+      order.customerName?.toLowerCase().includes(term) ||
+      order.phone?.toLowerCase().includes(term) ||
+      order.email?.toLowerCase().includes(term) ||
+      order.shippingAddress?.toLowerCase().includes(term)
+    );
+  }
+  
+  return orders;
+});
 
 // Methods
 const loadOrders = async () => {
-  loading.value = true;
-  try {
-    // Fetch from API
-    const fetchedOrders = await OrderService.getOrders();
-    orders.value = fetchedOrders;
-    console.log('✅ Orders loaded from API:', fetchedOrders);
-  } catch (error) {
-    console.error('❌ Error loading orders:', error);
-    // Use fallback data if API fails
-    orders.value = OrderService.getFallbackOrders();
-  } finally {
-    loading.value = false;
-  }
+  await fetchUserOrders();
 };
 
 const toggleSearch = () => {
@@ -380,20 +415,66 @@ const toggleSearch = () => {
   }
 };
 
-const viewOrderDetails = async (orderId) => {
+const viewOrderDetails = async (order) => {
+  selectedOrder.value = order;
+  showOrderDetails.value = true;
+  console.log('✅ Order details loaded:', order);
+};
+
+const handleCancelOrder = async (order) => {
+  const reason = prompt(t('cancelReason') || 'يرجى إدخال سبب الإلغاء:');
+  if (!reason) return;
+
+  cancellingOrder.value = true;
   try {
-    const order = await OrderService.getOrderById(orderId);
-    selectedOrder.value = order;
-    showOrderDetails.value = true;
-    console.log('✅ Order details loaded:', order);
-  } catch (error) {
-    console.error('❌ Error loading order details:', error);
-    // Fallback to local data
-    const order = orders.value.find(o => o.id === orderId);
-    if (order) {
-      selectedOrder.value = order;
-      showOrderDetails.value = true;
+    const result = await cancelOrder(order.id, reason);
+    if (result.success) {
+      store.dispatch('notifications/add', {
+        type: 'success',
+        title: t('orderCancelled') || 'تم إلغاء الطلب',
+        message: result.message,
+        timeout: 3000
+      });
+    } else {
+      throw new Error(result.message);
     }
+  } catch (error) {
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: error.message,
+      timeout: 5000
+    });
+  } finally {
+    cancellingOrder.value = false;
+  }
+};
+
+const handleGenerateInvoice = async (order) => {
+  generatingInvoice.value = true;
+  try {
+    const result = await generateInvoice(order.id);
+    if (result.success) {
+      // Download the invoice
+      window.open(result.invoiceUrl, '_blank');
+      store.dispatch('notifications/add', {
+        type: 'success',
+        title: t('invoiceGenerated') || 'تم إنشاء الفاتورة',
+        message: result.message,
+        timeout: 3000
+      });
+    } else {
+      throw new Error(result.message);
+    }
+  } catch (error) {
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: error.message,
+      timeout: 5000
+    });
+  } finally {
+    generatingInvoice.value = false;
   }
 };
 
