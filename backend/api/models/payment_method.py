@@ -4,13 +4,9 @@ Supports configurable payment methods with multilingual instructions and account
 """
 
 from django.db import models
-from django.core.validators import RegexValidator
-from django.core.exceptions import ValidationError
+from django.utils import timezone
+import json
 from django.utils.translation import gettext_lazy as _
-from django.contrib.auth import get_user_model
-
-
-User = get_user_model()
 
 
 class PaymentMethodManager(models.Manager):

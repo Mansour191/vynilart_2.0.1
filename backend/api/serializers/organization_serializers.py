@@ -8,7 +8,7 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 
-from .organization import Organization, Social, PlatformType
+from api.models.organization import Organization, Social, PlatformType
 
 
 User = get_user_model()
@@ -66,6 +66,18 @@ class SocialSerializer(serializers.ModelSerializer):
         if value not in dict(PlatformType.choices).values():
             raise serializers.ValidationError(_('نوع المنصة غير صالح'))
         return value
+
+
+class PlatformTypeSerializer(serializers.ModelSerializer):
+    """Platform type configuration serializer"""
+    class Meta:
+        model = PlatformType
+        fields = [
+            'id', 'name', 'platform_type', 'icon', 'color',
+            'base_url', 'url_template', 'is_active',
+            'validation_regex', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -336,3 +348,91 @@ class SocialListResponseSerializer(serializers.Serializer):
     data = SocialSerializer(many=True, required=False)
     count = serializers.IntegerField(required=False)
     platform_type = serializers.CharField(required=False)
+
+
+class OrganizationBulkActionSerializer(serializers.Serializer):
+    """Organization bulk action serializer"""
+    action = serializers.ChoiceField(
+        choices=['activate', 'deactivate', 'verify', 'unverify'],
+        required=True
+    )
+    organization_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=True
+    )
+    
+    def validate_organization_ids(self, value):
+        """Validate organization IDs exist"""
+        if not Organization.objects.filter(id__in=value).exists():
+            raise serializers.ValidationError("One or more organizations not found")
+        return value
+    
+    def save(self):
+        """Execute bulk action"""
+        action = self.validated_data['action']
+        organization_ids = self.validated_data['organization_ids']
+        organizations = Organization.objects.filter(id__in=organization_ids)
+        
+        if action == 'activate':
+            organizations.update(is_active=True)
+            message = f'{organizations.count()} organizations activated'
+        
+        elif action == 'deactivate':
+            organizations.update(is_active=False)
+            message = f'{organizations.count()} organizations deactivated'
+        
+        elif action == 'verify':
+            organizations.update(is_verified=True)
+            message = f'{organizations.count()} organizations verified'
+        
+        elif action == 'unverify':
+            organizations.update(is_verified=False)
+            message = f'{organizations.count()} organizations unverified'
+        
+        return {
+            'status': 'success',
+            'message': message,
+            'affected_count': organizations.count()
+        }
+
+
+class SocialBulkActionSerializer(serializers.Serializer):
+    """Social media bulk action serializer"""
+    action = serializers.ChoiceField(
+        choices=['activate', 'deactivate', 'delete'],
+        required=True
+    )
+    social_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=True
+    )
+    
+    def validate_social_ids(self, value):
+        """Validate social IDs exist"""
+        if not Social.objects.filter(id__in=value).exists():
+            raise serializers.ValidationError("One or more social platforms not found")
+        return value
+    
+    def save(self):
+        """Execute bulk action"""
+        action = self.validated_data['action']
+        social_ids = self.validated_data['social_ids']
+        social_platforms = Social.objects.filter(id__in=social_ids)
+        
+        if action == 'activate':
+            social_platforms.update(is_active=True)
+            message = f'{social_platforms.count()} social platforms activated'
+        
+        elif action == 'deactivate':
+            social_platforms.update(is_active=False)
+            message = f'{social_platforms.count()} social platforms deactivated'
+        
+        elif action == 'delete':
+            social_platforms.delete()
+            message = f'{social_platforms.count()} social platforms deleted'
+        
+        return {
+            'status': 'success',
+            'message': message,
+            'affected_count': social_platforms.count()
+        }

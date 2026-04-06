@@ -9,14 +9,10 @@ This module provides comprehensive coupon management with:
 """
 
 from django.db import models
-from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 import uuid
 import secrets
-
-User = get_user_model()
 
 
 class CouponManager(models.Manager):
@@ -168,7 +164,7 @@ class Coupon(models.Model):
     
     # Audit Fields
     created_by = models.ForeignKey(
-        User,
+        'api.User',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -335,7 +331,7 @@ class CouponUsage(models.Model):
         verbose_name=_('الكوبون')
     )
     user = models.ForeignKey(
-        User,
+        'api.User',
         on_delete=models.CASCADE,
         related_name='couponusage',
         verbose_name=_('المستخدم')

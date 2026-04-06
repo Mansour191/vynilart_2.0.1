@@ -1031,3 +1031,16 @@ class NotificationCountView(APIView):
             'recent': recent_count,
             'by_category': list(category_counts)
         })
+
+
+class HealthView(APIView):
+    """Health check endpoint for monitoring"""
+    
+    def get(self, request):
+        """Return health status"""
+        return Response({
+            'status': 'healthy',
+            'service': 'VynilArt API',
+            'version': '2.0.1',
+            'timestamp': timezone.now().isoformat()
+        })

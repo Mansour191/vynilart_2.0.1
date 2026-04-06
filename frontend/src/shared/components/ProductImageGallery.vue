@@ -311,12 +311,6 @@ const previousImage = () => {
   currentImageIndex.value = prevIndex;
   currentImage.value = sortedImages.value[prevIndex];
 };
-  if (props.images.length <= 1) return;
-  
-  const prevIndex = currentImageIndex.value === 0 ? props.images.length - 1 : currentImageIndex.value - 1;
-  currentImageIndex.value = prevIndex;
-  currentImage.value = props.images[prevIndex];
-};
 
 const openLightbox = (index = 0) => {
   lightboxIndex.value = index;

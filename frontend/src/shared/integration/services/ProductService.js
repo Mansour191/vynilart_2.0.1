@@ -116,6 +116,13 @@ class ProductService {
    */
   _transformProduct(product, lang = null) {
     const currentLang = lang || i18n.global.locale.value || i18n.global.locale;
+    
+    // Process images to ensure absolute URLs
+    const processedImages = (product.images || []).map(image => ({
+      ...image,
+      imageUrl: this._processImageUrl(image.imageUrl)
+    }));
+    
     return {
       id: product.id,
       title: currentLang === 'ar' ? product.name_ar : product.name_en,
@@ -125,7 +132,7 @@ class ProductService {
       description: currentLang === 'ar' ? product.description_ar : product.description_en,
       description_ar: product.description_ar,
       description_en: product.description_en,
-      image: product.image || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?q=80&w=800&auto=format&fit=crop',
+      image: this._processImageUrl(product.image) || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?q=80&w=800&auto=format&fit=crop',
       base_price: product.base_price,
       cost: product.cost,
       stock: product.stock,
@@ -135,12 +142,28 @@ class ProductService {
       category: product.category,
       category_name: currentLang === 'ar' ? product.category?.name_ar : product.category?.name_en,
       category_slug: product.category?.slug,
-      images: product.images || [],
+      images: processedImages,
       variants: product.variants || [],
       created_at: product.created_at,
       link: `/products/${product.slug}`,
       summary: currentLang === 'ar' ? product.description_ar?.substring(0, 150) : product.description_en?.substring(0, 150)
     };
+  }
+
+  /**
+   * تحويل رابط الصورة إلى رابط كامل (Absolute URL)
+   */
+  _processImageUrl(imageUrl) {
+    if (!imageUrl) return null;
+    
+    // If already a full URL, return as is
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+    
+    // If relative path, combine with API base URL
+    const apiBaseUrl = this.apiBaseUrl.replace('/api', '');
+    return `${apiBaseUrl}${imageUrl.startsWith('/') ? imageUrl : '/' + imageUrl}`;
   }
 
   /**

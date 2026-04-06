@@ -82,7 +82,7 @@ WSGI_APPLICATION = 'vynilart_project.wsgi.application'
 
 # GraphQL Configuration
 GRAPHENE = {
-    'SCHEMA': 'core.schema_simple.schema',
+    'SCHEMA': 'core.schema.schema',
     'MIDDLEWARE': [],  # Add empty middleware list to prevent DjangoDebugMiddleware error
 }
 
