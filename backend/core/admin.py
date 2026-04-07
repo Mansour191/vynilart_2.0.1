@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from . import models
+from api import models
 
 
 @admin.register(models.User)
@@ -215,10 +215,10 @@ class NotificationAdmin(admin.ModelAdmin):
 
 @admin.register(models.Alert)
 class AlertAdmin(admin.ModelAdmin):
-    list_display = ['user', 'type', 'is_active', 'created_at']
-    list_filter = ['type', 'is_active', 'created_at']
-    search_fields = ['user__username', 'message']
-    readonly_fields = ['created_at']
+    list_display = ['product', 'alert_type', 'priority', 'is_resolved', 'created_at']
+    list_filter = ['alert_type', 'priority', 'is_resolved', 'created_at']
+    search_fields = ['product__name_ar', 'product__name_en', 'title']
+    readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(models.ERPNextSyncLog)
@@ -292,7 +292,8 @@ class DashboardSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(models.WishlistSettings)
 class WishlistSettingsAdmin(admin.ModelAdmin):
-    list_display = ['user', 'auto_add', 'max_items', 'email_reminders', 'created_at']
+    list_display = ['user', 'items_per_page', 'sort_by', 'email_notifications', 'push_notifications', 'created_at']
+    list_filter = ['email_notifications', 'push_notifications', 'auto_remove_out_of_stock']
     search_fields = ['user__username']
     readonly_fields = ['created_at', 'updated_at']
 

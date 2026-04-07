@@ -2,6 +2,7 @@
 Enhanced Cart Models for VynilArt API
 """
 from django.db import models
+from .product import Product, Material
 from django.utils import timezone
 import json
 
@@ -86,18 +87,18 @@ class CartItem(models.Model):
     """
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.CASCADE, 
         related_name='cart_items',
         db_column='user_id'
     )
     product = models.ForeignKey(
-        'product.Product', 
+        Product, 
         on_delete=models.CASCADE,
         db_column='product_id'
     )
     material = models.ForeignKey(
-        'product.Material', 
+        Material, 
         on_delete=models.SET_NULL, 
         blank=True, 
         null=True,

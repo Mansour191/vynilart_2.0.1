@@ -1,10 +1,12 @@
 /**
  * Shipping Store (Pinia)
- * This store manages shipping data and calculations
+ * This store manages shipping data and calculations using GraphQL
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { ACTIVE_SHIPPING_QUERY, ALL_SHIPPING_QUERY, SHIPPING_QUERY, SHIPPING_BY_WILAYA_QUERY } from '@/integration/graphql/shipping'
+import { useApolloClient } from '@vue/apollo-composable'
 
 export const useShippingStore = defineStore('shipping', () => {
   // State
@@ -12,6 +14,7 @@ export const useShippingStore = defineStore('shipping', () => {
   const isLoading = ref(false)
   const lastFetched = ref(null)
   const baseCity = ref(null)
+  const apollo = useApolloClient()
   
   // Computed properties
   const activeWilayas = computed(() => {
@@ -21,7 +24,7 @@ export const useShippingStore = defineStore('shipping', () => {
   const wilayasByCode = computed(() => {
     const result = {}
     wilayas.value.forEach(wilaya => {
-      result[wilaya.wilayaCode] = wilaya
+      result[wilaya.wilayaId] = wilaya
     })
     return result
   })
@@ -29,19 +32,25 @@ export const useShippingStore = defineStore('shipping', () => {
   const wilayasById = computed(() => {
     const result = {}
     wilayas.value.forEach(wilaya => {
-      result[wilaya.wilayaId] = wilaya
+      result[wilaya.id] = wilaya
     })
     return result
   })
 
   const northernWilayas = computed(() => {
     // Northern Algeria (codes 1-18)
-    return wilayas.value.filter(wilaya => wilaya.wilayaCode >= 1 && wilaya.wilayaCode <= 18)
+    return wilayas.value.filter(wilaya => {
+      const code = parseInt(wilaya.wilayaId)
+      return code >= 1 && code <= 18
+    })
   })
 
   const southernWilayas = computed(() => {
     // Southern Algeria (codes 19-58)
-    return wilayas.value.filter(wilaya => wilaya.wilayaCode >= 19 && wilaya.wilayaCode <= 58)
+    return wilayas.value.filter(wilaya => {
+      const code = parseInt(wilaya.wilayaId)
+      return code >= 19 && code <= 58
+    })
   })
 
   const averageHomeDeliveryPrice = computed(() => {
@@ -65,16 +74,13 @@ export const useShippingStore = defineStore('shipping', () => {
     isLoading.value = true
 
     try {
-      const response = await fetch('/api/shipping/wilayas/', {
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
+      const { data } = await apollo.query({
+        query: ACTIVE_SHIPPING_QUERY,
+        fetchPolicy: 'network-first'
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        wilayas.value = data.results || data
+      if (data?.activeShipping?.edges) {
+        wilayas.value = data.activeShipping.edges.map(edge => edge.node)
         lastFetched.value = Date.now()
         saveToStorage()
       }
@@ -87,54 +93,24 @@ export const useShippingStore = defineStore('shipping', () => {
     }
   }
 
-  async function fetchWilaya(wilayaId) {
-    try {
-      const response = await fetch(`/api/shipping/wilayas/${wilayaId}/`, {
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (response.ok) {
-        const wilaya = await response.json()
-        
-        // Update in local array
-        const index = wilayas.value.findIndex(w => w.wilayaId === wilayaId)
-        if (index !== -1) {
-          wilayas.value[index] = wilaya
-          saveToStorage()
-        }
-        
-        return wilaya
-      }
-    } catch (error) {
-      console.error('Error fetching wilaya:', error)
-      return null
-    }
-  }
-
-  async function fetchShippingMethods() {
+  async function fetchAllWilayas() {
     if (isLoading.value) return
 
     isLoading.value = true
 
     try {
-      const response = await fetch('/api/shipping/methods/', {
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
+      const { data } = await apollo.query({
+        query: ALL_SHIPPING_QUERY,
+        fetchPolicy: 'network-first'
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        shippingMethods.value = data.results || data
+      if (data?.allShipping?.edges) {
+        wilayas.value = data.allShipping.edges.map(edge => edge.node)
         lastFetched.value = Date.now()
         saveToStorage()
       }
     } catch (error) {
-      console.error('Error fetching shipping methods:', error)
+      console.error('Error fetching all wilayas:', error)
       // Fallback to localStorage
       loadFromStorage()
     } finally {
@@ -142,254 +118,132 @@ export const useShippingStore = defineStore('shipping', () => {
     }
   }
 
-  async function fetchShippingPrices(wilayaId) {
+  async function fetchWilaya(wilayaId) {
     try {
-      const response = await fetch(`/api/shipping/prices/?wilaya_id=${wilayaId}`, {
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
+      const { data } = await apollo.query({
+        query: SHIPPING_QUERY,
+        variables: { id: wilayaId },
+        fetchPolicy: 'network-first'
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        return data.results || data
-      }
-    } catch (error) {
-      console.error('Error fetching shipping prices:', error)
-      return []
-    }
-  }
-
-  async function updateShippingPrices(wilayaId, updates) {
-    try {
-      const response = await fetch(`/api/shipping/prices/${wilayaId}/`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates)
-      })
-
-      if (response.ok) {
-        const updatedPrice = await response.json()
-        
+      if (data?.shipping) {
         // Update in local array
-        const index = shippingPrices.value.findIndex(p => p.wilaya_id === wilayaId)
+        const index = wilayas.value.findIndex(w => w.id === wilayaId)
         if (index !== -1) {
-          shippingPrices.value[index] = updatedPrice
+          wilayas.value[index] = data.shipping
+          saveToStorage()
+        } else {
+          wilayas.value.push(data.shipping)
           saveToStorage()
         }
         
-        return updatedPrice
+        return data.shipping
       }
     } catch (error) {
-      console.error('Error updating shipping prices:', error)
+      console.error('Error fetching wilaya:', error)
       return null
     }
   }
 
-  async function bulkUpdatePrices(wilayaIds, updates) {
+  async function fetchWilayaByCode(wilayaCode) {
     try {
-      const response = await fetch('/api/shipping/prices/bulk-update/', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          wilaya_ids: wilayaIds,
-          updates: updates
-        })
+      const { data } = await apollo.query({
+        query: SHIPPING_BY_WILAYA_QUERY,
+        variables: { wilayaId: wilayaCode },
+        fetchPolicy: 'network-first'
       })
 
-      if (response.ok) {
-        const result = await response.json()
+      if (data?.allShipping?.edges && data.allShipping.edges.length > 0) {
+        const wilaya = data.allShipping.edges[0].node
         
-        // Update local array
-        result.updated_prices.forEach(updatedPrice => {
-          const index = shippingPrices.value.findIndex(p => p.wilaya_id === updatedPrice.wilaya_id)
-          if (index !== -1) {
-            shippingPrices.value[index] = updatedPrice
-          }
-        })
-        
+        // Update in local array
+        const index = wilayas.value.findIndex(w => w.id === wilaya.id)
+        if (index !== -1) {
+          wilayas.value[index] = wilaya
+        } else {
+          wilayas.value.push(wilaya)
+        }
         saveToStorage()
-        return result
+        
+        return wilaya
       }
     } catch (error) {
-      console.error('Error bulk updating shipping prices:', error)
+      console.error('Error fetching wilaya by code:', error)
       return null
     }
   }
 
   function getWilayaByCode(code) {
-    return wilayasByCode.value[code] || null
+    return wilayas.value.find(wilaya => wilaya.wilayaId === code) || null
   }
 
   function getWilayaById(id) {
-    return wilayasById.value[id] || null
+    return wilayas.value.find(wilaya => wilaya.id === id) || null
   }
 
-  function calculateShippingCost(wilayaId, serviceType = 'home', methodId = null, orderWeight = null, orderVolume = null) {
-    const wilaya = getWilayaById(wilayaId)
-    if (!wilaya || !wilaya.is_active) return 0
+  function calculateShippingCost(wilayaId, serviceType = 'home') {
+    const wilaya = getWilayaByCode(wilayaId)
+    if (!wilaya || !wilaya.isActive) return 0
 
-    // Get available shipping prices for this wilaya
-    const availablePrices = shippingPrices.value.filter(price => 
-      price.wilaya_id === wilayaId && 
-      price.is_active && 
-      price.shipping_method.is_active
-    )
-
-    if (methodId) {
-      // Use specific method
-      const methodPrice = availablePrices.find(p => p.shipping_method_id === methodId)
-      if (!methodPrice) return 0
-
-      let basePrice = 0
-      if (serviceType === 'home') {
-        basePrice = parseFloat(methodPrice.home_delivery_price)
-      } else if (serviceType === 'desk') {
-        basePrice = parseFloat(methodPrice.stop_desk_price)
-      } else if (serviceType === 'express' && methodPrice.express_price) {
-        basePrice = parseFloat(methodPrice.express_price)
-      }
-
-      // Add surcharges
-      let additionalCost = 0
-      if (orderWeight && orderWeight > 10) {
-        additionalCost += (orderWeight - 10) * parseFloat(methodPrice.weight_surcharge || 0)
-      }
-      
-      if (orderVolume && orderVolume > 0.1) {
-        additionalCost += (orderVolume - 0.1) * parseFloat(methodPrice.volume_surcharge || 0)
-      }
-
-      return basePrice + additionalCost
+    let basePrice = 0
+    if (serviceType === 'home') {
+      basePrice = parseFloat(wilaya.homeDeliveryPrice)
+    } else if (serviceType === 'stop_desk') {
+      basePrice = parseFloat(wilaya.stopDeskPrice)
     }
 
-    // Find best price for service type
-    let bestPrice = 0
-    let bestMethod = null
-
-    for (const methodPrice of availablePrices) {
-      let currentPrice = 0
-      
-      if (serviceType === 'home') {
-        currentPrice = parseFloat(methodPrice.home_delivery_price)
-      } else if (serviceType === 'desk') {
-        currentPrice = parseFloat(methodPrice.stop_desk_price)
-      } else if (serviceType === 'express' && methodPrice.express_price) {
-        currentPrice = parseFloat(methodPrice.express_price)
-      }
-
-      // Add surcharges
-      let additionalCost = 0
-      if (orderWeight && orderWeight > 10) {
-        additionalCost += (orderWeight - 10) * parseFloat(methodPrice.weight_surcharge || 0)
-      }
-      
-      if (orderVolume && orderVolume > 0.1) {
-        additionalCost += (orderVolume - 0.1) * parseFloat(methodPrice.volume_surcharge || 0)
-      }
-
-      currentPrice += additionalCost
-
-      if (bestPrice === 0 || currentPrice < bestPrice) {
-        bestPrice = currentPrice
-        bestMethod = methodPrice.shipping_method
-      }
-    }
-
-    return bestPrice
+    return basePrice
   }
 
-  function calculateDeliveryTime(wilayaId, serviceType = 'home', methodId = null) {
-    const wilaya = getWilayaById(wilayaId)
-    if (!wilaya || !wilaya.is_active) return null
+  function calculateDeliveryTime(wilayaId, serviceType = 'home') {
+    const wilaya = getWilayaByCode(wilayaId)
+    if (!wilaya || !wilaya.isActive) return null
 
-    // Get available shipping prices for this wilaya
-    const availablePrices = shippingPrices.value.filter(price => 
-      price.wilaya_id === wilayaId && 
-      price.is_active && 
-      price.shipping_method.is_active
-    )
-
-    if (methodId) {
-      // Use specific method
-      const methodPrice = availablePrices.find(p => p.shipping_method_id === methodId)
-      if (methodPrice) {
-        return methodPrice.shipping_method.expected_delivery_time
-      }
-      return null
+    // Basic delivery time estimation based on region
+    const code = parseInt(wilayaId)
+    if (code <= 18) {
+      // Northern Algeria - faster delivery
+      return serviceType === 'home' ? 2 : 1
+    } else {
+      // Southern Algeria - slower delivery
+      return serviceType === 'home' ? 4 : 2
     }
-
-    // Find fastest delivery for service type
-    let fastestTime = null
-    for (const methodPrice of availablePrices) {
-      const currentTime = methodPrice.shipping_method.expected_delivery_time
-      
-      if (serviceType === 'express' && methodPrice.shipping_method.service_type === 'express') {
-        fastestTime = Math.min(fastestTime || currentTime, currentTime)
-      } else if (serviceType === 'desk' && methodPrice.shipping_method.service_type === 'desk') {
-        fastestTime = Math.min(fastestTime || currentTime, currentTime)
-      } else if (serviceType === 'home') {
-        fastestTime = Math.min(fastestTime || currentTime, currentTime)
-      }
-    }
-
-    return fastestTime
   }
 
-  function isFreeShippingEligible(wilayaId, orderTotal, methodId = null) {
-    const availablePrices = shippingPrices.value.filter(price => 
-      price.wilaya_id === wilayaId && 
-      price.is_active && 
-      price.shipping_method.is_active &&
-      price.free_shipping_minimum
-    )
-
-    if (methodId) {
-      // Check specific method
-      const methodPrice = availablePrices.find(p => p.shipping_method_id === methodId)
-      if (methodPrice) {
-        return orderTotal >= parseFloat(methodPrice.free_shipping_minimum)
-      }
-      return false
-    }
-
-    // Check any method
-    return availablePrices.some(price => 
-      orderTotal >= parseFloat(price.free_shipping_minimum)
-    )
+  function isFreeShippingEligible(wilayaId, orderTotal) {
+    // For now, no free shipping threshold is implemented
+    // This can be enhanced later with business logic
+    return false
   }
 
   function getAvailableShippingMethods(wilayaId) {
-    const availablePrices = shippingPrices.value.filter(price => 
-      price.wilaya_id === wilayaId && 
-      price.is_active && 
-      price.shipping_method.is_active
-    )
+    const wilaya = getWilayaByCode(wilayaId)
+    if (!wilaya || !wilaya.isActive) return []
 
-    return availablePrices.map(price => ({
-      ...price.shipping_method,
-      prices: {
-        home: parseFloat(price.home_delivery_price),
-        desk: parseFloat(price.stop_desk_price),
-        express: price.express_price ? parseFloat(price.express_price) : null
+    // Return basic shipping options
+    return [
+      {
+        id: 'home_delivery',
+        name: 'Home Delivery',
+        serviceType: 'home',
+        price: parseFloat(wilaya.homeDeliveryPrice),
+        estimatedTime: calculateDeliveryTime(wilayaId, 'home'),
+        available: true
       },
-      free_shipping_minimum: price.free_shipping_minimum ? parseFloat(price.free_shipping_minimum) : null,
-      cod_available: price.cod_available,
-      insurance_available: price.insurance_available,
-      tracking_available: price.tracking_available
-    }))
+      {
+        id: 'stop_desk',
+        name: 'Stop Desk',
+        serviceType: 'stop_desk',
+        price: parseFloat(wilaya.stopDeskPrice),
+        estimatedTime: calculateDeliveryTime(wilayaId, 'stop_desk'),
+        available: true
+      }
+    ]
   }
 
   function getWilayasByRegion(region) {
     return wilayas.value.filter(wilaya => 
-      wilaya.regions && wilaya.regions.includes(region)
+      wilaya.regions && Array.isArray(wilaya.regions) && wilaya.regions.includes(region)
     )
   }
 
@@ -399,9 +253,8 @@ export const useShippingStore = defineStore('shipping', () => {
     const searchTerm = query.toLowerCase()
     return wilayas.value.filter(wilaya => 
       wilaya.nameAr.toLowerCase().includes(searchTerm) ||
-      wilaya.nameEn.toLowerCase().includes(searchTerm) ||
-      wilaya.wilayaId.toString().includes(searchTerm) ||
-      wilaya.wilayaCode.toString().includes(searchTerm)
+      wilaya.nameFr.toLowerCase().includes(searchTerm) ||
+      wilaya.wilayaId.toLowerCase().includes(searchTerm)
     )
   }
 
@@ -414,8 +267,6 @@ export const useShippingStore = defineStore('shipping', () => {
     try {
       const data = {
         wilayas: wilayas.value,
-        shippingPrices: shippingPrices.value,
-        shippingMethods: shippingMethods.value,
         lastFetched: lastFetched.value,
         baseCity: baseCity.value
       }
@@ -437,10 +288,6 @@ export const useShippingStore = defineStore('shipping', () => {
     } catch (error) {
       console.error('Error loading shipping data from storage:', error)
     }
-  }
-
-  function getAuthToken() {
-    return localStorage.getItem('auth_token') || ''
   }
 
   function initialize() {
@@ -474,15 +321,15 @@ export const useShippingStore = defineStore('shipping', () => {
     
     // Actions
     fetchWilayas,
+    fetchAllWilayas,
     fetchWilaya,
-    updateShippingPrices,
-    bulkUpdatePrices,
+    fetchWilayaByCode,
     getWilayaByCode,
     getWilayaById,
     calculateShippingCost,
     calculateDeliveryTime,
     isFreeShippingEligible,
-    getDistanceFromBase,
+    getAvailableShippingMethods,
     getWilayasByRegion,
     searchWilayas,
     setBaseCity,

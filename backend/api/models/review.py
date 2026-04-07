@@ -3,6 +3,7 @@ Review and Design Models for VynilArt API
 """
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from .product import Product
 
 
 class Review(models.Model):
@@ -11,12 +12,12 @@ class Review(models.Model):
     """
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.CASCADE,
         db_column='user_id'
     )
     product = models.ForeignKey(
-        'product.Product', 
+        Product, 
         on_delete=models.CASCADE,
         db_column='product_id'
     )
@@ -55,7 +56,7 @@ class ReviewReport(models.Model):
         db_column='review_id'
     )
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.CASCADE,
         db_column='user_id'
     )
@@ -119,7 +120,7 @@ class Design(models.Model):
         db_column='category_id'
     )
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.SET_NULL, 
         blank=True, 
         null=True,

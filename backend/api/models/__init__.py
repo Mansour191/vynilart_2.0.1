@@ -34,7 +34,7 @@ from .review import (
 )
 
 # Notification Models
-from .notification import Notification, Alert
+from .notification import Notification
 
 # ERPNext Integration Models
 from .erpnext import ERPNextSyncLog
@@ -52,7 +52,7 @@ from .blog import BlogCategory, BlogPost
 from .conversation import ConversationHistory
 
 # Dashboard and Settings Models
-from .dashboard import DashboardSettings, WishlistSettings as WishlistSettingsNew
+from .dashboard import DashboardSettings
 
 # Organization Models
 from .organization import Organization, Social, PlatformType
@@ -76,13 +76,13 @@ __all__ = [
     'CartItem', 'PromotionCoupon',
     
     # Wishlist models
-    'Wishlist', 'WishlistSettings', 'WishlistSettingsNew', 'Alert', 'AlertRule',
+    'Wishlist', 'WishlistSettings', 'Alert', 'AlertRule',
     
     # Review models
     'Review', 'ReviewReport', 'DesignCategory', 'Design',
     
     # Notification models
-    'Notification', 'Alert',
+    'Notification',
     
     # ERPNext models
     'ERPNextSyncLog',
@@ -98,7 +98,7 @@ __all__ = [
     'ConversationHistory',
     
     # Dashboard models
-    'DashboardSettings', 'WishlistSettingsNew',
+    'DashboardSettings',
     
     # Organization models
     'Organization', 'Social', 'PlatformType',

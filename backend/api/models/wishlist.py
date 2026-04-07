@@ -2,6 +2,7 @@
 Enhanced Wishlist Models for VynilArt API
 """
 from django.db import models
+from .product import Product
 from django.utils import timezone
 import json
 
@@ -49,13 +50,13 @@ class Wishlist(models.Model):
     """
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.CASCADE, 
         related_name='wishlist_items',
         db_column='user_id'
     )
     product = models.ForeignKey(
-        'product.Product', 
+        Product, 
         on_delete=models.CASCADE,
         related_name='wishlist_entries',
         db_column='product_id'

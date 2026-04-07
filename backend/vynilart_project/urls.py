@@ -4,7 +4,16 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.decorators.csrf import csrf_exempt
 from graphene_django.views import GraphQLView
-from core.schema_simple import schema
+from graphene import Schema, ObjectType, String
+
+# Create simple schema for now
+class Query(ObjectType):
+    hello = String()
+
+    def resolve_hello(self, info):
+        return "Hello World!"
+
+schema = Schema(query=Query)
 
 # إنشاء view مخصص لتجاوز إعدادات MIDDLEWARE
 class SafeGraphQLView(GraphQLView):

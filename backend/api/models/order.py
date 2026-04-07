@@ -4,6 +4,10 @@ Order Models for VynilArt API
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
+import uuid
+from datetime import datetime
+from .product import Product, Material
+from .shipping import Shipping
 
 
 class Order(models.Model):
@@ -11,9 +15,9 @@ class Order(models.Model):
     Order model matching api_order table
     """
     id = models.AutoField(primary_key=True)
-    order_number = models.CharField(max_length=50, unique=True)
+    order_number = models.CharField(max_length=50, unique=True, editable=False)
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.SET_NULL, 
         blank=True, 
         null=True,
@@ -24,10 +28,12 @@ class Order(models.Model):
     phone = models.CharField(max_length=20)
     email = models.EmailField(blank=True, null=True)
     shipping_address = models.TextField()
-    wilaya_id = models.CharField(
-        max_length=10,
+    wilaya = models.ForeignKey(
+        Shipping,
+        on_delete=models.SET_NULL,
         blank=True,
         null=True,
+        related_name='orders',
         db_column='wilaya_id'
     )
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
@@ -53,13 +59,40 @@ class Order(models.Model):
             models.Index(fields=['user']),
             models.Index(fields=['status']),
             models.Index(fields=['created_at']),
-            models.Index(fields=['wilaya_id']),
+            models.Index(fields=['wilaya']),
             models.Index(fields=['payment_method']),
         ]
         ordering = ['-created_at']
 
     def __str__(self):
         return f"Order {self.order_number}"
+
+    def save(self, *args, **kwargs):
+        """
+        Override save method to generate automatic order_number
+        """
+        if not self.order_number:
+            # Generate order number with format: VA-YYYYMMDD-XXXXX
+            today = datetime.now().strftime('%Y%m%d')
+            # Get today's order count
+            today_count = Order.objects.filter(
+                created_at__date=datetime.now().date()
+            ).count()
+            # Generate unique order number
+            self.order_number = f"VA-{today}-{today_count + 1:05d}"
+            
+            # Ensure uniqueness by checking if order number already exists
+            while Order.objects.filter(order_number=self.order_number).exists():
+                today_count += 1
+                self.order_number = f"VA-{today}-{today_count + 1:05d}"
+        
+        super().save(*args, **kwargs)
+
+    def calculate_total_amount(self):
+        """
+        Calculate total amount based on subtotal, shipping, tax, and discount
+        """
+        return (self.subtotal + self.shipping_cost + self.tax - self.discount_amount)
 
 
 class OrderItem(models.Model):
@@ -74,12 +107,12 @@ class OrderItem(models.Model):
         db_column='order_id'
     )
     product = models.ForeignKey(
-        'product.Product', 
+        Product, 
         on_delete=models.CASCADE,
         db_column='product_id'
     )
     material = models.ForeignKey(
-        'product.Material', 
+        Material, 
         on_delete=models.SET_NULL, 
         blank=True, 
         null=True,
@@ -122,7 +155,7 @@ class OrderTimeline(models.Model):
     status = models.CharField(max_length=50)
     note = models.TextField(blank=True, null=True)
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.SET_NULL, 
         blank=True, 
         null=True,

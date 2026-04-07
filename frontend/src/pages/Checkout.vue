@@ -93,7 +93,7 @@
               <!-- Shipping Method Selection -->
               <v-row v-if="shippingInfo.wilayaId">
                 <v-col cols="12">
-                  <ShippingMethodSelector
+                  <ShippingSelector
                     :wilaya-id="shippingInfo.wilayaId"
                     @shipping-selected="onShippingMethodSelected"
                     @price-updated="onShippingPriceUpdated"
@@ -348,7 +348,7 @@ import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { useShippingStore } from '@/stores/shipping'
 import { useToast } from 'vuetify'
-import ShippingMethodSelector from '@/components/ShippingMethodSelector.vue'
+import ShippingSelector from '@/components/ShippingSelector.vue'
 
 // Router
 const router = useRouter()
@@ -388,23 +388,24 @@ const isPlacingOrder = ref(false)
 const availableWilayas = computed(() => {
   return shippingStore.activeWilayas.map(wilaya => ({
     ...wilaya,
-    title: `${wilaya.nameAr} (${wilaya.wilayaCode})`
+    title: `${wilaya.nameAr} (${wilaya.wilayaId})`
   }))
 })
 
 const shippingCost = ref(0)
-const deliveryTime = ref(0)
+const selectedShippingMethod = ref(null)
+const selectedWilaya = ref(null)
 
 const deliveryTypes = [
-  { title: 'توصيل للمنزل', value: 'home' },
-  { title: 'نقطة استلام', value: 'stop_desk' },
-  { title: 'توصيل سريع', value: 'express' }
+  { title: 'Home Delivery', value: 'home' },
+  { title: 'Stop Desk', value: 'stop_desk' },
+  { title: 'Express', value: 'express' }
 ]
 
 const paymentMethods = [
-  { title: 'الدفع عند الاستلام (COD)', value: 'cod' },
-  { title: 'بطاقة الائتمان', value: 'credit_card' },
-  { title: 'تحويل بنكي', value: 'bank_transfer' }
+  { title: 'Cash on Delivery (COD)', value: 'cod' },
+  { title: 'Credit Card', value: 'credit_card' },
+  { title: 'Bank Transfer', value: 'bank_transfer' }
 ]
 
 const canPlaceOrder = computed(() => {
@@ -416,7 +417,7 @@ const canPlaceOrder = computed(() => {
     customerInfo.value.phone &&
     customerInfo.value.address &&
     shippingInfo.value.wilayaId &&
-    shippingInfo.value.deliveryType &&
+    selectedShippingMethod.value &&
     paymentInfo.value.method &&
     (!selectedWilaya.value || selectedWilaya.value.isActive)
   )
@@ -443,10 +444,27 @@ function formatCurrency(amount) {
   }).format(amount)
 }
 
+function onWilayaChange() {
+  // Reset shipping method when wilaya changes
+  selectedShippingMethod.value = null
+  shippingCost.value = 0
+  
+  // Update selected wilaya
+  selectedWilaya.value = shippingStore.getWilayaByCode(shippingInfo.value.wilayaId)
+}
+
+function onShippingMethodSelected(data) {
+  selectedShippingMethod.value = data.method
+  shippingCost.value = data.cost
+}
+
+function onShippingPriceUpdated(cost) {
+  shippingCost.value = cost
+}
+
 async function updateShippingCost() {
   if (!shippingInfo.value.wilayaId || !shippingInfo.value.deliveryType) {
     shippingCost.value = 0
-    deliveryTime.value = 0
     return
   }
 
@@ -469,7 +487,6 @@ async function updateShippingCost() {
     if (response.ok) {
       const data = await response.json()
       shippingCost.value = data.is_free_shipping ? 0 : data.shipping_cost
-      deliveryTime.value = data.delivery_time_days
     }
   } catch (error) {
     console.error('Error calculating shipping:', error)
@@ -596,30 +613,6 @@ function getAuthToken() {
   return localStorage.getItem('auth_token') || ''
 }
 
-function onWilayaChange() {
-  // Reset shipping method when wilaya changes
-  selectedShippingMethod.value = null
-  selectedShippingPrice.value = null
-  shippingCost.value = 0
-  
-  // Update selected wilaya
-  selectedWilaya.value = shippingStore.getWilayaById(shippingInfo.value.wilayaId)
-}
-
-function onShippingMethodSelected(data) {
-  shippingInfo.value.selectedMethod = data.method
-  shippingInfo.value.selectedServiceType = data.serviceType
-  selectedShippingMethod.value = data.method
-  selectedShippingPrice.value = shippingStore.shippingPrices.value.find(price => 
-    price.wilaya_id === shippingInfo.value.wilayaId && 
-    price.shipping_method_id === data.methodId
-  )
-  shippingCost.value = data.cost
-}
-
-function onShippingPriceUpdated(cost) {
-  shippingCost.value = cost
-}
 
 function getAuthToken() {
   return localStorage.getItem('auth_token') || ''

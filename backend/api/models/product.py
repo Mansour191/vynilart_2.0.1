@@ -180,6 +180,13 @@ class Product(models.Model):
     sync_error = models.TextField(blank=True, null=True)
     last_synced_at = models.DateTimeField(blank=True, null=True)
     
+    # Many-to-Many relationship with Materials
+    materials = models.ManyToManyField(
+        Material,
+        through='ProductMaterial',
+        related_name='products'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -276,10 +283,34 @@ class ProductImage(models.Model):
     """
     id = models.AutoField(primary_key=True)
     product = models.ForeignKey(
+        Product, 
+        on_delete=models.CASCADE, 
+        related_name='images',
+        db_column='product_id'
     )
+    name = models.CharField(max_length=255)
+    image = models.ImageField(upload_to='products/')
     tags = models.JSONField(default=list, blank=True)
-    
-    # Status and flags
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'api_productimage'
+        indexes = [
+            models.Index(fields=['product']),
+            models.Index(fields=['is_active']),
+        ]
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.product.name_ar} - {self.name}"
+
+
+class ProductVariant(models.Model):
+    """
+    Product variants matching api_productvariant table
+    """
     id = models.AutoField(primary_key=True)
     product = models.ForeignKey(
         Product, 

@@ -23,7 +23,7 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'email']
+    REQUIRED_FIELDS = ['username']
 
     def __str__(self):
         return self.username
@@ -43,7 +43,7 @@ class UserProfile(models.Model):
     """
     id = models.AutoField(primary_key=True)
     user = models.OneToOneField(
-        'auth.User',  # Reference to Django's built-in User model
+        'api.User',  # Reference to Django's built-in User model
         on_delete=models.CASCADE,
         related_name='profile',
         db_column='user_id'

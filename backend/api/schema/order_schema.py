@@ -15,48 +15,40 @@ class OrderType(DjangoObjectType):
     """Enhanced order type"""
     id = graphene.ID(required=True)
     order_number = String()
-    reference_number = String()
     
     # Customer information
     user = Field(lambda: UserType)
     customer_name = String()
-    customer_email = String()
-    customer_phone = String()
+    phone = String()
+    email = String()
     
     # Shipping information
     shipping_address = String()
-    shipping_wilaya = Field(lambda: ShippingType)
-    shipping_method = Field(lambda: ShippingMethodType)
-    delivery_type = String()
+    wilaya = Field(lambda: ShippingType)
+    wilaya_name = String()
     
     # Financial information
     subtotal = Float()
     shipping_cost = Float()
     tax = Float()
     discount_amount = Float()
-    coupon_discount = Float()
     total_amount = Float()
-    
-    # Additional charges
-    cod_fee = Float()
-    insurance_fee = Float()
+    calculated_total = Float()
     
     # Status and workflow
     status = String()
     payment_method = String()
-    payment_status = String()
+    payment_status = Boolean()
     is_paid = Boolean()
     
-    # Tracking
-    tracking_number = String()
-    tracking_url = String()
+    # ERPNext synchronization
+    sync_status = String()
+    erpnext_sales_order_id = String()
+    sync_error = String()
+    last_synced_at = DateTime()
     
-    # Dates
-    order_date = graphene.Date()
-    expected_delivery_date = graphene.Date()
-    shipped_at = DateTime()
-    delivered_at = DateTime()
-    cancelled_at = DateTime()
+    # Notes
+    notes = String()
     
     # Relations
     items = List(lambda: OrderItemType)
@@ -65,7 +57,7 @@ class OrderType(DjangoObjectType):
     
     # Computed fields
     can_cancel = Boolean()
-    can_track = Boolean()
+    customer_info = JSONString()
     
     created_at = DateTime()
     updated_at = DateTime()
@@ -79,58 +71,66 @@ class OrderType(DjangoObjectType):
             'status': ['exact'],
             'payment_status': ['exact'],
             'user': ['exact'],
-            'shipping_wilaya': ['exact'],
+            'wilaya': ['exact'],
             'payment_method': ['exact'],
+            'sync_status': ['exact'],
             'created_at': ['exact', 'lt', 'lte', 'gt', 'gte'],
-            'order_date': ['exact', 'lt', 'lte', 'gt', 'gte'],
         }
 
     def resolve_is_paid(self, info):
         """Check if order is paid"""
-        return self.payment_status in ['paid', 'partially_refunded']
+        return self.payment_status
 
     def resolve_can_cancel(self, info):
         """Check if order can be cancelled"""
         return self.status in ['pending', 'confirmed']
 
-    def resolve_can_track(self, info):
-        """Check if order can be tracked"""
-        return (
-            self.status in ['shipped', 'delivered'] and 
-            self.tracking_number
-        )
+    def resolve_wilaya_name(self, info):
+        """Get wilaya name"""
+        return self.wilaya.name_ar if self.wilaya else None
+
+    def resolve_calculated_total(self, info):
+        """Calculate total amount based on subtotal, shipping, tax, and discount"""
+        return self.calculate_total_amount()
+
+    def resolve_customer_info(self, info):
+        """Get customer information"""
+        return {
+            'name': self.customer_name,
+            'email': self.email,
+            'phone': self.phone,
+            'address': self.shipping_address,
+            'wilaya': self.wilaya.name_ar if self.wilaya else None
+        }
+
+    def resolve_timeline(self, info):
+        """Get order timeline sorted by timestamp (newest first)"""
+        return self.timeline.all().order_by('-timestamp')
 
 
 class OrderItemType(DjangoObjectType):
-    """Order item type"""
+    """Order item type with enhanced fields"""
     id = graphene.ID(required=True)
     order = Field(OrderType)
     product = Field(lambda: ProductType)
-    product_snapshot = JSONString()
+    product_name = String()
     
     # Material and customization
     material = Field(lambda: MaterialType)
-    material_snapshot = JSONString()
+    material_name = String()
     width = Float()
     height = Float()
     dimension_unit = String()
     marble_texture = String()
     custom_design = String()
     
-    # Pricing
+    # Pricing with price locking
     quantity = Int()
-    unit_price = Float()
-    material_price = Float()
-    discount_amount = Float()
-    total_price = Float()
-    final_price = Float()
-    
-    # Status
-    status = String()
-    
-    # Notes
-    notes = String()
-    production_notes = String()
+    price = Float()
+    subtotal = Float()
+    original_product_price = Float()
+    area_cm2 = Float()
+    area_m2 = Float()
     
     created_at = DateTime()
     updated_at = DateTime()
@@ -143,16 +143,33 @@ class OrderItemType(DjangoObjectType):
             'order': ['exact'],
             'product': ['exact'],
             'material': ['exact'],
-            'status': ['exact'],
         }
+
+    def resolve_product_name(self, info):
+        """Get product name"""
+        return self.product.name_ar if self.product else None
+
+    def resolve_material_name(self, info):
+        """Get material name"""
+        return self.material.name_ar if self.material else None
 
     def resolve_subtotal(self, info):
         """Calculate subtotal for this item"""
-        return (self.unit_price + self.material_price) * self.quantity
-
-    def resolve_final_price(self, info):
-        """Calculate final price after discount"""
-        return self.subtotal - self.discount_amount
+        return self.price * self.quantity
+    
+    def resolve_original_product_price(self, info):
+        """Get original product price at time of order"""
+        return self.product.base_price if self.product else None
+    
+    def resolve_area_cm2(self, info):
+        """Calculate area in cm²"""
+        return self.width * self.height if self.width and self.height else None
+    
+    def resolve_area_m2(self, info):
+        """Calculate area in m²"""
+        if self.width and self.height:
+            return (self.width * self.height) / 10000  # Convert cm² to m²
+        return None
 
 
 class OrderTimelineType(DjangoObjectType):
@@ -160,23 +177,11 @@ class OrderTimelineType(DjangoObjectType):
     id = graphene.ID(required=True)
     order = Field(OrderType)
     status = String()
-    title = String()
     note = String()
     
     # User tracking
     user = Field(lambda: UserType)
-    
-    # Location tracking
-    location = String()
-    latitude = Float()
-    longitude = Float()
-    
-    # Visibility
-    is_public = Boolean()
-    is_internal = Boolean()
-    
-    # Attachments
-    attachments = List(String)
+    user_name = String()
     
     timestamp = DateTime()
 
@@ -187,9 +192,12 @@ class OrderTimelineType(DjangoObjectType):
         filter_fields = {
             'order': ['exact'],
             'status': ['exact'],
-            'is_public': ['exact'],
             'timestamp': ['exact', 'lt', 'lte', 'gt', 'gte'],
         }
+
+    def resolve_user_name(self, info):
+        """Get user name"""
+        return self.user.username if self.user else None
 
 
 class PaymentType(DjangoObjectType):
@@ -199,30 +207,20 @@ class PaymentType(DjangoObjectType):
     
     # Payment details
     amount = Float()
-    currency = String()
     method = String()
-    gateway = String()
     
     # Status and tracking
     status = String()
     transaction_id = String()
-    authorization_code = String()
     
     # Gateway response
     gateway_response = JSONString()
-    gateway_fee = Float()
-    
-    # Refund information
-    refund_amount = Float()
-    refund_reason = String()
-    refund_date = DateTime()
     
     # Dates
-    processed_at = DateTime()
-    completed_at = DateTime()
-    
     created_at = DateTime()
     updated_at = DateTime()
+    
+    is_successful = Boolean()
 
     class Meta:
         model = Payment
@@ -231,7 +229,7 @@ class PaymentType(DjangoObjectType):
         filter_fields = {
             'order': ['exact'],
             'status': ['exact'],
-            'gateway': ['exact'],
+            'method': ['exact'],
             'transaction_id': ['exact'],
             'created_at': ['exact', 'lt', 'lte', 'gt', 'gte'],
         }
@@ -240,23 +238,28 @@ class PaymentType(DjangoObjectType):
         """Check if payment was successful"""
         return self.status == 'completed'
 
-    def resolve_can_refund(self, info):
-        """Check if payment can be refunded"""
-        return self.status == 'completed' and self.refund_amount < self.amount
-
 
 # Input Types
 class OrderInput(graphene.InputObjectType):
     """Input for order creation"""
+    user_id = ID()
     customer_name = String(required=True)
-    customer_email = String()
-    customer_phone = String(required=True)
+    phone = String(required=True)
+    email = String()
     shipping_address = String(required=True)
-    shipping_wilaya_id = ID()
-    shipping_method_id = ID()
-    delivery_type = String()
+    wilaya_id = ID()
+    subtotal = Float()
+    shipping_cost = Float(default_value=0)
+    tax = Float(default_value=0)
+    discount_amount = Float(default_value=0)
+    payment_method = String(default_value='cod')
     notes = String()
-    customer_notes = String()
+    
+    # ERPNext synchronization
+    sync_status = String(default_value='pending')
+    erpnext_sales_order_id = String()
+    sync_error = String()
+    last_synced_at = DateTime()
 
 
 class OrderItemInput(graphene.InputObjectType):
@@ -269,6 +272,7 @@ class OrderItemInput(graphene.InputObjectType):
     marble_texture = String()
     custom_design = String()
     quantity = Int(default_value=1)
+    price = Float(required=True)
 
 
 class PaymentInput(graphene.InputObjectType):
@@ -298,53 +302,73 @@ class CreateOrder(Mutation):
         try:
             from api.models.order import Order, OrderItem
             from api.models.product import Product, Material
-            from api.models.shipping import Shipping, ShippingMethod
+            from api.models.shipping import Shipping
+            from django.contrib.auth.models import User
             
             user = info.context.user
+            authenticated_user = user if user.is_authenticated else None
+            
+            # Get user from input if provided
+            if input.get('user_id'):
+                try:
+                    authenticated_user = User.objects.get(id=input['user_id'])
+                except User.DoesNotExist:
+                    return CreateOrder(
+                        success=False,
+                        message="User not found",
+                        errors=["User not found"]
+                    )
             
             # Get shipping info
-            shipping_wilaya = None
-            if 'shipping_wilaya_id' in input:
-                shipping_wilaya = Shipping.objects.get(id=input['shipping_wilaya_id'])
+            wilaya = None
+            if input.get('wilaya_id'):
+                try:
+                    wilaya = Shipping.objects.get(id=input['wilaya_id'])
+                except Shipping.DoesNotExist:
+                    return CreateOrder(
+                        success=False,
+                        message="Wilaya not found",
+                        errors=["Wilaya not found"]
+                    )
             
-            shipping_method = None
-            if 'shipping_method_id' in input:
-                shipping_method = ShippingMethod.objects.get(id=input['shipping_method_id'])
+            # Calculate subtotal from items if not provided
+            calculated_subtotal = 0
+            for item_data in items:
+                calculated_subtotal += item_data['price'] * item_data['quantity']
+            
+            subtotal = input.get('subtotal') or calculated_subtotal
+            shipping_cost = input.get('shipping_cost', 0)
+            tax = input.get('tax', 0)
+            discount_amount = input.get('discount_amount', 0)
+            total_amount = subtotal + shipping_cost + tax - discount_amount
             
             # Create order
             order = Order.objects.create(
-                order_number=Order.generate_order_number(),
-                user=user if user.is_authenticated else None,
+                user=authenticated_user,
                 customer_name=input.customer_name,
-                customer_email=input.customer_email,
-                customer_phone=input.customer_phone,
+                phone=input.phone,
+                email=input.get('email'),
                 shipping_address=input.shipping_address,
-                shipping_wilaya=shipping_wilaya,
-                shipping_method=shipping_method,
-                delivery_type=input.get('delivery_type', 'home'),
-                notes=input.notes,
-                customer_notes=input.customer_notes
+                wilaya=wilaya,
+                subtotal=subtotal,
+                shipping_cost=shipping_cost,
+                tax=tax,
+                discount_amount=discount_amount,
+                total_amount=total_amount,
+                payment_method=input.get('payment_method', 'cod'),
+                notes=input.get('notes'),
+                sync_status=input.get('sync_status', 'pending'),
+                erpnext_sales_order_id=input.get('erpnext_sales_order_id'),
+                sync_error=input.get('sync_error'),
+                last_synced_at=input.get('last_synced_at')
             )
             
             # Create order items
-            total_amount = 0
             for item_data in items:
                 product = Product.objects.get(id=item_data['product_id'])
                 material = None
-                if 'material_id' in item_data:
+                if item_data.get('material_id'):
                     material = Material.objects.get(id=item_data['material_id'])
-                
-                # Calculate pricing
-                unit_price = product.base_price
-                material_price = material.price_per_m2 if material else 0
-                
-                # Calculate material price based on dimensions
-                if material and item_data.get('width') and item_data.get('height'):
-                    area_m2 = (item_data['width'] * item_data['height']) / 10000
-                    material_price = material.price_per_m2 * area_m2
-                
-                item_total = (unit_price + material_price) * item_data['quantity']
-                total_amount += item_total
                 
                 OrderItem.objects.create(
                     order=order,
@@ -356,15 +380,8 @@ class CreateOrder(Mutation):
                     marble_texture=item_data.get('marble_texture'),
                     custom_design=item_data.get('custom_design'),
                     quantity=item_data['quantity'],
-                    unit_price=unit_price,
-                    material_price=material_price,
-                    total_price=item_total
+                    price=item_data['price']
                 )
-            
-            # Update order totals
-            order.subtotal = total_amount
-            order.total_amount = total_amount
-            order.save()
             
             return CreateOrder(
                 success=True,
@@ -372,6 +389,18 @@ class CreateOrder(Mutation):
                 order=order
             )
             
+        except Product.DoesNotExist:
+            return CreateOrder(
+                success=False,
+                message="Product not found",
+                errors=["One or more products not found"]
+            )
+        except Material.DoesNotExist:
+            return CreateOrder(
+                success=False,
+                message="Material not found",
+                errors=["One or more materials not found"]
+            )
         except Exception as e:
             return CreateOrder(
                 success=False,
@@ -483,6 +512,102 @@ class CancelOrder(Mutation):
             )
         except Exception as e:
             return CancelOrder(
+                success=False,
+                message=str(e),
+                errors=[str(e)]
+            )
+
+
+class BulkCreateOrderItems(Mutation):
+    """Bulk create order items for an existing order"""
+    
+    class Arguments:
+        order_id = ID(required=True)
+        items = List(OrderItemInput, required=True)
+
+    success = Boolean()
+    message = String()
+    order_items = List(OrderItemType)
+    errors = List(String)
+
+    def mutate(self, info, order_id, items):
+        try:
+            from api.models.order import Order, OrderItem
+            from api.models.product import Product, Material
+            
+            # Get the order
+            order = Order.objects.get(id=order_id)
+            
+            created_items = []
+            errors = []
+            
+            for item_data in items:
+                try:
+                    # Validate product exists
+                    product = Product.objects.get(id=item_data['product_id'])
+                    
+                    # Validate material if provided
+                    material = None
+                    if item_data.get('material_id'):
+                        material = Material.objects.get(id=item_data['material_id'])
+                    
+                    # Calculate price if not provided
+                    if 'price' not in item_data:
+                        width = item_data.get('width', 1)
+                        height = item_data.get('height', 1)
+                        area = width * height / 10000  # Convert cm² to m²
+                        
+                        if material and hasattr(material, 'price_per_m2'):
+                            item_data['price'] = product.base_price + (material.price_per_m2 * area)
+                        else:
+                            item_data['price'] = product.base_price
+                    
+                    # Create order item
+                    order_item = OrderItem.objects.create(
+                        order=order,
+                        product=product,
+                        material=material,
+                        width=item_data['width'],
+                        height=item_data['height'],
+                        dimension_unit=item_data.get('dimension_unit', 'cm'),
+                        marble_texture=item_data.get('marble_texture'),
+                        custom_design=item_data.get('custom_design'),
+                        quantity=item_data['quantity'],
+                        price=item_data['price']
+                    )
+                    
+                    created_items.append(order_item)
+                    
+                except Product.DoesNotExist:
+                    errors.append(f"Product with ID {item_data['product_id']} not found")
+                except Material.DoesNotExist:
+                    errors.append(f"Material with ID {item_data.get('material_id')} not found")
+                except Exception as e:
+                    errors.append(f"Error creating item: {str(e)}")
+            
+            # Update order subtotal
+            if created_items:
+                new_subtotal = sum(item.price * item.quantity for item in created_items)
+                existing_subtotal = sum(item.price * item.quantity for item in order.items.all())
+                order.subtotal = existing_subtotal + new_subtotal
+                order.total_amount = order.subtotal + order.shipping_cost + order.tax - order.discount_amount
+                order.save()
+            
+            return BulkCreateOrderItems(
+                success=len(created_items) > 0,
+                message=f"Created {len(created_items)} order items successfully",
+                order_items=created_items,
+                errors=errors if errors else None
+            )
+            
+        except Order.DoesNotExist:
+            return BulkCreateOrderItems(
+                success=False,
+                message="Order not found",
+                errors=["Order not found"]
+            )
+        except Exception as e:
+            return BulkCreateOrderItems(
                 success=False,
                 message=str(e),
                 errors=[str(e)]
@@ -603,3 +728,4 @@ class OrderMutation(ObjectType):
     create_order = CreateOrder.Field()
     update_order_status = UpdateOrderStatus.Field()
     cancel_order = CancelOrder.Field()
+    bulk_create_order_items = BulkCreateOrderItems.Field()

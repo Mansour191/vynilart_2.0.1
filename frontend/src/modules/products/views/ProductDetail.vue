@@ -257,6 +257,75 @@
                 </v-alert>
               </div>
 
+              <!-- Custom Dimensions Input -->
+              <div class="custom-dimensions mb-6">
+                <h3 class="text-h6 font-weight-bold mb-3">{{ $t('customDimensions') || 'الأبعاد المخصصة' }}</h3>
+                <v-row>
+                  <v-col cols="6">
+                    <v-text-field
+                      v-model.number="productDimensions.width"
+                      type="number"
+                      :label="$t('width') || 'العرض (سم)'"
+                      variant="outlined"
+                      min="10"
+                      step="0.1"
+                      @update:model-value="onDimensionChange"
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <v-text-field
+                      v-model.number="productDimensions.height"
+                      type="number"
+                      :label="$t('height') || 'الارتفاع (سم)'"
+                      variant="outlined"
+                      min="10"
+                      step="0.1"
+                      @update:model-value="onDimensionChange"
+                    ></v-text-field>
+                  </v-col>
+                </v-row>
+                <div class="text-caption text-medium-emphasis mt-1">
+                  {{ $t('area') || 'المساحة' }}: {{ ((productDimensions.width * productDimensions.height) / 10000).toFixed(2) }} م²
+                </div>
+              </div>
+
+              <!-- Marble Texture Selection -->
+              <div class="texture-selection mb-6">
+                <h3 class="text-h6 font-weight-bold mb-3">{{ $t('marbleTexture') || 'نسيج الرخام' }}</h3>
+                <v-select
+                  v-model="selectedTexture"
+                  :items="availableTextures"
+                  :label="$t('selectTexture') || 'اختر النسيج'"
+                  variant="outlined"
+                  clearable
+                  item-title="name"
+                  item-value="value"
+                  prepend-inner-icon="mdi-image-texture"
+                >
+                  <template #item="{ props, item }">
+                    <v-list-item v-bind="props" :title="item.name">
+                      <template #prepend>
+                        <v-icon :color="item.color">{{ item.icon }}</v-icon>
+                      </template>
+                    </v-list-item>
+                  </template>
+                </v-select>
+              </div>
+
+              <!-- Custom Design Input -->
+              <div class="custom-design mb-6">
+                <h3 class="text-h6 font-weight-bold mb-3">{{ $t('customDesign') || 'تصميم مخصص' }}</h3>
+                <v-textarea
+                  v-model="customDesign"
+                  :label="$t('designDescription') || 'وصف التصميم المخصص'"
+                  variant="outlined"
+                  rows="3"
+                  counter="500"
+                  prepend-inner-icon="mdi-draw"
+                  placeholder="صف تصميمك المخصص هنا..."
+                ></v-textarea>
+              </div>
+
               <!-- Material Selection -->
               <div class="material-selection mb-6">
                 <ProductMaterialSelector
@@ -369,6 +438,20 @@ const referenceDimension = ref(null);
 const aiImageFile = ref(null);
 const aiLoading = ref(false);
 const aiResults = ref(null);
+const selectedTexture = ref(null);
+const customDesign = ref('');
+
+// Available marble textures
+const availableTextures = ref([
+  { name: 'رخام أبيض نقي', value: 'pure_white', icon: 'mdi-circle', color: 'grey-lighten-2' },
+  { name: 'رخام أسود كلاسيكي', value: 'classic_black', icon: 'mdi-circle', color: 'black' },
+  { name: 'رخام بني دافئ', value: 'warm_brown', icon: 'mdi-circle', color: 'brown-darken-2' },
+  { name: 'رخام رمادي عصري', value: 'modern_gray', icon: 'mdi-circle', color: 'grey' },
+  { name: 'رخام ذهبي فاخر', value: 'luxury_gold', icon: 'mdi-circle', color: 'amber-darken-2' },
+  { name: 'رخام وردي ناعم', value: 'soft_pink', icon: 'mdi-circle', color: 'pink-lighten-2' },
+  { name: 'رخام أزرق سماوي', value: 'sky_blue', icon: 'mdi-circle', color: 'blue-lighten-2' },
+  { name: 'رخام أخضر طبيعي', value: 'natural_green', icon: 'mdi-circle', color: 'green-darken-1' }
+]);
 
 // Computed
 const productId = computed(() => route.params.id);
@@ -482,6 +565,26 @@ const onPriceUpdate = (newPrice) => {
   console.log('💰 Material price updated:', newPrice);
 };
 
+const onDimensionChange = () => {
+  // Recalculate price when dimensions change
+  if (selectedMaterial.value) {
+    onPriceUpdate(calculateTotalPrice(selectedMaterial.value, productDimensions.value, quantity.value));
+  }
+  
+  // Update AI results if they exist
+  if (aiResults.value) {
+    const area = (productDimensions.value.width * productDimensions.value.height) / 10000;
+    const basePrice = currentProduct.value?.basePrice || 0;
+    const materialPrice = selectedMaterial.value ? 
+      calculateTotalPrice(selectedMaterial.value, productDimensions.value, quantity.value) : 0;
+    
+    aiResults.value = {
+      area: area.toFixed(2),
+      price: basePrice + materialPrice
+    };
+  }
+};
+
 const onImageChange = (event) => {
   aiImageFile.value = event.target.files[0];
   aiResults.value = null;
@@ -515,39 +618,56 @@ const runSmartMeasurement = async () => {
   }
 };
 
-const addToCart = () => {
+const addToCart = async () => {
   if (!canAddToCartComputed.value) {
     console.warn('⚠️ Cannot add to cart: Product not available or insufficient stock');
     return;
   }
   
-  const cartItem = {
-    product: currentProduct.value,
-    variant: selectedVariant.value,
-    material: selectedMaterial.value,
-    quantity: quantity.value,
-    dimensions: productDimensions.value,
-    price: finalPrice.value,
-    // Include variant information for proper order preparation
-    variantId: selectedVariant.value?.id || null,
-    sku: selectedVariant.value?.sku || currentProduct.value.sku || 'N/A',
-    variantName: selectedVariant.value?.name || null,
-    totalPrice: finalPrice.value
-  };
-  
-  // Dispatch to store
-  store.dispatch('cart/addItem', cartItem);
-  
-  console.log('✅ Added to cart:', cartItem);
-  
-  // Show success notification
-  store.dispatch('notifications/add', {
-    type: 'success',
-    title: t('addedToCart') || 'تمت الإضافة للسلة',
-    message: `${currentProduct.value.nameAr || currentProduct.value.nameEn} ${selectedVariant.value ? `(${selectedVariant.value.name})` : ''} × ${quantity.value}`,
-    icon: 'mdi-cart',
-    timeout: 3000
-  });
+  try {
+    // Use cart store with new OrderItem fields
+    const { useCartStore } = await import('@/stores/cart');
+    const cartStore = useCartStore();
+    
+    const options = {
+      materialId: selectedMaterial.value?.id || null,
+      quantity: quantity.value,
+      width: productDimensions.value.width,
+      height: productDimensions.value.height,
+      dimensionUnit: 'cm',
+      marbleTexture: selectedTexture.value || null,
+      customDesign: customDesign.value || null,
+      variantId: selectedVariant.value?.id || null,
+      options: {
+        sku: selectedVariant.value?.sku || currentProduct.value.sku || 'N/A',
+        variantName: selectedVariant.value?.name || null,
+        textureName: availableTextures.value.find(t => t.value === selectedTexture.value)?.name || null
+      }
+    };
+    
+    await cartStore.addToCart(currentProduct.value, options);
+    
+    console.log('✅ Added to cart with OrderItem fields:', {
+      product: currentProduct.value.nameAr || currentProduct.value.nameEn,
+      dimensions: productDimensions.value,
+      texture: selectedTexture.value,
+      customDesign: customDesign.value,
+      material: selectedMaterial.value?.nameAr || selectedMaterial.value?.nameEn,
+      quantity: quantity.value
+    });
+    
+  } catch (error) {
+    console.error('❌ Error adding to cart:', error);
+    
+    // Show error notification
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: t('addToCartError') || 'فشلت إضافة المنتج للسلة',
+      icon: 'mdi-alert-circle',
+      timeout: 5000
+    });
+  }
 };
 
 const selectProductImage = (image) => {

@@ -2,8 +2,8 @@ import { gql } from '@apollo/client/core';
 
 // Create order mutation
 export const CREATE_ORDER_MUTATION = gql`
-  mutation CreateOrder($input: OrderInput!) {
-    createOrder(input: $input) {
+  mutation CreateOrder($input: OrderInput!, $items: [OrderItemInput!]!) {
+    createOrder(input: $input, items: $items) {
       success
       message
       order {
@@ -54,14 +54,6 @@ export const CREATE_ORDER_MUTATION = gql`
               isMain
             }
           }
-          variant {
-            id
-            name
-            sku
-            price
-            stock
-            attributes
-          }
           material {
             id
             nameAr
@@ -72,7 +64,11 @@ export const CREATE_ORDER_MUTATION = gql`
           }
           quantity
           price
-          totalPrice
+          width
+          height
+          dimensionUnit
+          marbleTexture
+          customDesign
         }
         timeline {
           id
@@ -162,6 +158,86 @@ export const USER_ORDERS_QUERY = gql`
           }
         }
         cursor
+      }
+    }
+  }
+`;
+
+// Get my orders (simplified for OrderHistory)
+export const MY_ORDERS_QUERY = gql`
+  query GetMyOrders($page: Int, $limit: Int) {
+    myOrders(page: $page, limit: $limit) {
+      id
+      orderNumber
+      customerName
+      phone
+      email
+      shippingAddress
+      wilaya {
+        id
+        wilayaId
+        nameAr
+        nameFr
+      }
+      subtotal
+      shippingCost
+      tax
+      discountAmount
+      totalAmount
+      status
+      paymentMethod
+      paymentStatus
+      notes
+      createdAt
+      updatedAt
+      items {
+        id
+        product {
+          id
+          nameAr
+          nameEn
+          slug
+          images {
+            id
+            imageUrl
+            altText
+            isMain
+          }
+        }
+        material {
+          id
+          nameAr
+          nameEn
+          pricePerM2
+          isPremium
+          image
+        }
+        quantity
+        price
+        totalPrice
+      }
+    }
+    myOrdersCount
+  }
+`;
+
+// Get shipping zones (alias for Checkout component)
+export const SHIPPING_QUERY = gql`
+  query GetShipping {
+    activeShipping {
+      edges {
+        node {
+          id
+          wilayaId
+          nameAr
+          nameFr
+          stopDeskPrice
+          homeDeliveryPrice
+          isActive
+          regions
+          createdAt
+          updatedAt
+        }
       }
     }
   }

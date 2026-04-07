@@ -56,6 +56,19 @@ export const PRODUCT_BY_ID_QUERY = gql`
         createdAt
         updatedAt
       }
+      materials {
+        id
+        nameAr
+        nameEn
+        description
+        pricePerM2
+        isPremium
+        isActive
+        image
+        properties
+        createdAt
+        updatedAt
+      }
     }
   }
 `;
@@ -118,24 +131,18 @@ export const PRODUCT_BY_SLUG_QUERY = gql`
             createdAt
             updatedAt
           }
-          available_materials {
+          materials {
             id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
             isActive
+            image
+            properties
             createdAt
             updatedAt
-            material {
-              id
-              nameAr
-              nameEn
-              description
-              pricePerM2
-              isPremium
-              isActive
-              image
-              properties
-              createdAt
-              updatedAt
-            }
           }
         }
         cursor
@@ -193,6 +200,19 @@ export const ALL_PRODUCTS_QUERY = gql`
             stock
             attributes
             isActive
+          }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
           }
         }
         cursor
@@ -263,6 +283,19 @@ export const ACTIVE_PRODUCTS_QUERY = gql`
             attributes
             isActive
           }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
+          }
         }
         cursor
       }
@@ -331,6 +364,19 @@ export const FEATURED_PRODUCTS_QUERY = gql`
             stock
             attributes
             isActive
+          }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
           }
         }
         cursor
@@ -401,6 +447,19 @@ export const NEW_PRODUCTS_QUERY = gql`
             attributes
             isActive
           }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
+          }
         }
         cursor
       }
@@ -470,6 +529,19 @@ export const PRODUCTS_BY_CATEGORY_QUERY = gql`
             attributes
             isActive
           }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
+          }
         }
         cursor
       }
@@ -538,6 +610,19 @@ export const PRODUCTS_ON_SALE_QUERY = gql`
             stock
             attributes
             isActive
+          }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
           }
         }
         cursor
@@ -739,6 +824,19 @@ export const PRODUCTS_WITH_STOCK_QUERY = gql`
             attributes
             isActive
           }
+          materials {
+            id
+            nameAr
+            nameEn
+            description
+            pricePerM2
+            isPremium
+            isActive
+            image
+            properties
+            createdAt
+            updatedAt
+          }
         }
         cursor
       }
@@ -749,6 +847,169 @@ export const PRODUCTS_WITH_STOCK_QUERY = gql`
         endCursor
       }
       totalCount
+    }
+  }
+`;
+
+// ProductVariant Mutations
+export const CREATE_PRODUCT_VARIANT_MUTATION = gql`
+  mutation CreateProductVariant(
+    $productId: ID!
+    $name: String!
+    $sku: String!
+    $price: Float!
+    $stock: Int
+    $attributes: JSONString
+    $isActive: Boolean
+  ) {
+    createProductVariant(
+      productId: $productId
+      name: $name
+      sku: $sku
+      price: $price
+      stock: $stock
+      attributes: $attributes
+      isActive: $isActive
+    ) {
+      success
+      message
+      productVariant {
+        id
+        name
+        sku
+        price
+        stock
+        attributes
+        isActive
+        createdAt
+        updatedAt
+        product {
+          id
+          nameAr
+          nameEn
+        }
+      }
+    }
+  }
+`;
+
+export const UPDATE_PRODUCT_VARIANT_MUTATION = gql`
+  mutation UpdateProductVariant(
+    $id: ID!
+    $name: String
+    $sku: String
+    $price: Float
+    $stock: Int
+    $attributes: JSONString
+    $isActive: Boolean
+  ) {
+    updateProductVariant(
+      id: $id
+      name: $name
+      sku: $sku
+      price: $price
+      stock: $stock
+      attributes: $attributes
+      isActive: $isActive
+    ) {
+      success
+      message
+      productVariant {
+        id
+        name
+        sku
+        price
+        stock
+        attributes
+        isActive
+        createdAt
+        updatedAt
+        product {
+          id
+          nameAr
+          nameEn
+        }
+      }
+    }
+  }
+`;
+
+export const DELETE_PRODUCT_VARIANT_MUTATION = gql`
+  mutation DeleteProductVariant($id: ID!) {
+    deleteProductVariant(id: $id) {
+      success
+      message
+    }
+  }
+`;
+
+// Product Material Mutations
+export const ADD_MATERIAL_TO_PRODUCT_MUTATION = gql`
+  mutation AddMaterialToProduct(
+    $productId: ID!
+    $materialId: ID!
+    $quantityUsed: Float
+    $unit: String
+  ) {
+    addMaterialToProduct(
+      productId: $productId
+      materialId: $materialId
+      quantityUsed: $quantityUsed
+      unit: $unit
+    ) {
+      success
+      message
+      product {
+        id
+        nameAr
+        nameEn
+        materials {
+          id
+          nameAr
+          nameEn
+          description
+          pricePerM2
+          isPremium
+          isActive
+          image
+          properties
+          createdAt
+          updatedAt
+        }
+      }
+    }
+  }
+`;
+
+export const REMOVE_MATERIAL_FROM_PRODUCT_MUTATION = gql`
+  mutation RemoveMaterialFromProduct(
+    $productId: ID!
+    $materialId: ID!
+  ) {
+    removeMaterialFromProduct(
+      productId: $productId
+      materialId: $materialId
+    ) {
+      success
+      message
+      product {
+        id
+        nameAr
+        nameEn
+        materials {
+          id
+          nameAr
+          nameEn
+          description
+          pricePerM2
+          isPremium
+          isActive
+          image
+          properties
+          createdAt
+          updatedAt
+        }
+      }
     }
   }
 `;

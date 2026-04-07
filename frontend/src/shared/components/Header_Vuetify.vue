@@ -10,8 +10,14 @@
     <v-container class="header-container d-flex align-center justify-space-between">
       <!-- Logo -->
       <div class="site-title">
-        <router-link to="/" class="text-decoration-none">
-          <span class="site-logo">{{ $t('siteTitle') }}</span>
+        <router-link to="/" class="text-decoration-none d-flex align-center">
+          <img 
+            v-if="organizationLogo" 
+            :src="organizationLogo" 
+            :alt="organizationName"
+            class="site-logo-img me-2"
+          />
+          <span class="site-logo">{{ organizationName || $t('siteTitle') }}</span>
         </router-link>
       </div>
 
@@ -146,6 +152,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/store/auth';
 import { useI18n } from 'vue-i18n';
+import { useOrganizationStore } from '@/stores/organization';
 import NotificationsDropdown from './NotificationsDropdown.vue';
 import LanguageSwitcher from './common/LanguageSwitcher.vue';
 
@@ -161,6 +168,14 @@ const emit = defineEmits(['toggle-mobile-menu', 'change-language', 'toggle-theme
 const router = useRouter();
 const authStore = useAuthStore();
 const { t } = useI18n();
+
+// Organization store
+const organizationStore = useOrganizationStore();
+const { 
+  organizationName, 
+  organizationLogo: getOrganizationLogo,
+  initialize: initializeOrg 
+} = organizationStore;
 
 // Navigation items configuration
 const navigationItems = computed(() => [
@@ -232,6 +247,15 @@ const isAuthenticated = computed(() => authStore.isAuthenticated);
 const currentUser = computed(() => authStore.user);
 const wishlistCount = computed(() => 0); // TODO: Implement wishlist count in DRF Auth Store
 
+// Organization computed properties
+const organizationLogo = computed(() => {
+  if (organizationStore.organization?.logo) {
+    // Get full URL from organization store
+    return organizationStore.organization.logo_url || organizationStore.organization.logo;
+  }
+  return null;
+});
+
 const userDisplayName = computed(() => {
   if (authStore.user) {
     return authStore.user.firstName || authStore.user.username || 'مستخدم';
@@ -253,9 +277,10 @@ const toggleTheme = () => {
   emit('toggle-theme');
 };
 
-// Initialize auth store on mount
-onMounted(() => {
+// Initialize auth and organization stores on mount
+onMounted(async () => {
   authStore.initializeAuth();
+  await initializeOrg();
 });
 </script>
 
@@ -276,12 +301,26 @@ onMounted(() => {
   font-weight: 800;
 }
 
+.site-logo-img {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.site-logo-img:hover {
+  transform: scale(1.05);
+}
+
 .site-logo {
   background: linear-gradient(135deg, #d4af37 0%, #f4e4bc 50%, #d4af37 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   letter-spacing: 0.5px;
+  font-size: 1.5rem;
+  font-weight: 800;
 }
 
 /* Navigation Buttons */

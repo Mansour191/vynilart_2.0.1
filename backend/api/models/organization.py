@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 import json
 from django.utils.translation import gettext_lazy as _
+from .shipping import Shipping
 
 
 class OrganizationManager(models.Manager):
@@ -40,12 +41,14 @@ class Organization(models.Model):
     name_ar = models.CharField(
         max_length=255,
         verbose_name=_('الاسم بالعربية'),
-        help_text=_('اسم المؤسسة باللغة العربية')
+        help_text=_('اسم المؤسسة باللغة العربية'),
+        default='VinylArt'
     )
     name_en = models.CharField(
         max_length=255,
         verbose_name=_('الاسم بالإنجليزية'),
-        help_text=_('اسم المؤسسة باللغة الإنجليزية')
+        help_text=_('اسم المؤسسة باللغة الإنجليزية'),
+        default='VinylArt'
     )
     
     # Visual Identity (Bilingual)
@@ -149,8 +152,8 @@ class Organization(models.Model):
         related_name='created_organizations'
     )
     base_city = models.ForeignKey(
-        'core.Shipping',
-        on_delete=models.SET_NULL,
+        Shipping,
+        on_delete=models.SET_NULL, 
         null=True,
         blank=True,
         verbose_name=_('المدينة الأساسية'),
@@ -407,10 +410,10 @@ def enforce_organization_singleton(sender, instance, **kwargs):
             Organization.objects.filter(is_active=True).exclude(pk=instance.pk).update(is_active=False)
 
 
-@receiver(post_migrate)
-def create_default_organization(sender, **kwargs):
-    """
-    Create default organization instance after migration
-    """
-    if sender.name == 'api':
-        Organization.objects.get_instance()
+# @receiver(post_migrate)
+# def create_default_organization(sender, **kwargs):
+#     """
+#     Create default organization instance after migration
+#     """
+#     if sender.name == 'api':
+#         Organization.objects.get_instance()

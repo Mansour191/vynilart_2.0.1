@@ -140,7 +140,7 @@ class PromotionCoupon(models.Model):
     
     # Attribution
     created_by = models.ForeignKey(
-        'api_user.User',
+        'api.User',
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
@@ -227,7 +227,7 @@ class CouponUsage(models.Model):
         related_name='coupon_usages'
     )
     order = models.ForeignKey(
-        'api_order.Order',
+        'api.Order',
         on_delete=models.CASCADE,
         related_name='coupon_usages'
     )
@@ -288,7 +288,7 @@ class CouponCampaign(models.Model):
     
     # Attribution
     created_by = models.ForeignKey(
-        'api_user.User',
+        'api.User',
         on_delete=models.SET_NULL,
         blank=True,
         null=True,

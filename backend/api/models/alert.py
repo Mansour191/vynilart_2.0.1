@@ -2,7 +2,8 @@
 Enhanced Alert Models for VynilArt API
 """
 from django.db import models
-from django.utils import timezone
+from django.contrib.auth.models import AbstractUser
+from .product import Product
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from decimal import Decimal
@@ -67,7 +68,7 @@ class Alert(models.Model):
     
     # Core fields
     product = models.ForeignKey(
-        'core.Product', 
+        Product, 
         on_delete=models.CASCADE,
         related_name='alerts'
     )
@@ -365,7 +366,7 @@ class AlertRule(models.Model):
     ]
     
     product = models.ForeignKey(
-        'core.Product',
+        Product, 
         on_delete=models.CASCADE,
         related_name='alert_rules'
     )
@@ -445,7 +446,7 @@ class AlertRule(models.Model):
 
 
 # Signal handlers for automatic alert generation
-@receiver(pre_save, sender='core.Product')
+@receiver(pre_save, sender='api.Product')
 def product_pre_save(sender, instance, **kwargs):
     """Check for price changes before saving product"""
     if not instance.pk:
@@ -482,7 +483,7 @@ def product_pre_save(sender, instance, **kwargs):
         pass
 
 
-@receiver(post_save, sender='core.Product')
+@receiver(post_save, sender='api.Product')
 def product_post_save(sender, instance, created, **kwargs):
     """Check for stock changes after saving product"""
     if created:

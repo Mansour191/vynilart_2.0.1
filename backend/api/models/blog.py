@@ -48,7 +48,7 @@ class BlogPost(models.Model):
         db_column='category_id'
     )
     author = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.SET_NULL, 
         blank=True, 
         null=True,

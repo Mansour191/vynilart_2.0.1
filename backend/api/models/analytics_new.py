@@ -2,6 +2,7 @@
 AI and Analytics Models for VynilArt API
 """
 from django.db import models
+from .product import Product
 
 
 class BehaviorTracking(models.Model):
@@ -10,7 +11,7 @@ class BehaviorTracking(models.Model):
     """
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.CASCADE,
         db_column='user_id'
     )
@@ -40,7 +41,7 @@ class Forecast(models.Model):
     """
     id = models.AutoField(primary_key=True)
     product = models.ForeignKey(
-        'product.Product', 
+        Product, 
         on_delete=models.CASCADE,
         db_column='product_id'
     )
@@ -98,7 +99,7 @@ class CustomerSegmentUser(models.Model):
         db_column='customersegment_id'
     )
     user = models.ForeignKey(
-        'auth.User', 
+        'api.User', 
         on_delete=models.CASCADE,
         db_column='user_id'
     )

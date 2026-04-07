@@ -21,6 +21,34 @@ from .models import Order, OrderTimeline, Payment, Coupon
 User = get_user_model()
 
 
+def create_order_timeline_entry(order, old_status=None):
+    """Create OrderTimeline entry with appropriate message"""
+    status_messages = {
+        'pending': 'تم استلام الطلب وجاري المعالجة',
+        'confirmed': 'تم تأكيد الطلب',
+        'processing': 'جاري تجهيز الطلب',
+        'shipped': 'تم شحن الطلب',
+        'delivered': 'تم تسليم الطلب',
+        'cancelled': 'تم إلغاء الطلب',
+        'refunded': 'تم استرداد المبلغ',
+        'returned': 'تم إرجاع الطلب'
+    }
+    
+    default_note = status_messages.get(order.status, f'تغير حالة الطلب إلى: {order.status}')
+    
+    # Add transition context if old status exists
+    if old_status and old_status != order.status:
+        default_note = f'تغير الحالة من "{old_status}" إلى "{order.status}"'
+    
+    # Create timeline entry
+    OrderTimeline.objects.create(
+        order=order,
+        status=order.status,
+        note=default_note,
+        user=None  # System generated
+    )
+
+
 class NotificationEngine:
     """Central notification engine for creating and managing notifications"""
     
@@ -114,6 +142,9 @@ class NotificationEngine:
 def order_created_notification(sender, instance, created, **kwargs):
     """Create notification when new order is created"""
     if created:
+        # Create initial timeline entry for new order
+        create_order_timeline_entry(instance)
+        
         NotificationEngine.create_notification(
             notification_type='order_created',
             title='🛒 طلب جديد',
@@ -151,6 +182,9 @@ def order_status_changed_notification(sender, instance, created, **kwargs):
     if not created:
         old_status = getattr(instance, '_old_status', None)
         if old_status and old_status != instance.status:
+            
+            # Create OrderTimeline entry
+            create_order_timeline_entry(instance, old_status)
             
             status_messages = {
                 'confirmed': ('✅ تأكيد الطلب', f'تم تأكيد طلبك رقم {instance.order_number} وجاري تحضيره'),
