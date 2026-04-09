@@ -10,8 +10,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Count, F
-from api.models.wishlist import Wishlist
-from api.models.alert import Alert
+from api.models.wishlist import Wishlist, WishlistSettings
 from api.models.product import Product
 
 User = get_user_model()
@@ -37,13 +36,12 @@ class WishlistType(DjangoObjectType):
     days_in_wishlist = Field(Int)
     
     class Meta:
-        model = models.Wishlist
+        model = Wishlist
         interfaces = (relay.Node,)
         fields = '__all__'
         filter_fields = {
             'user': ['exact'],
             'product': ['exact'],
-            'priority': ['exact'],
             'created_at': ['exact', 'lt', 'lte', 'gt', 'gte'],
         }
 
@@ -70,35 +68,42 @@ class WishlistType(DjangoObjectType):
     
     def resolve_is_available(self, info):
         """Check if product is available"""
-        return self.is_available
+        return self.product.is_active and self.product.stock > 0
     
     def resolve_is_in_stock(self, info):
         """Check if product is in stock"""
-        return self.is_in_stock
+        return self.product.stock > 0
     
     def resolve_current_price(self, info):
         """Get current product price"""
-        return self.current_price
+        if self.product.on_sale and self.product.discount_percent > 0:
+            return float(self.product.base_price * (1 - self.product.discount_percent / 100))
+        return float(self.product.base_price)
     
     def resolve_has_discount(self, info):
         """Check if product has discount"""
-        return self.has_discount
+        return self.product.on_sale and self.product.discount_percent > 0
     
     def resolve_discount_percentage(self, info):
         """Get discount percentage"""
-        return self.discount_percentage
+        return self.product.discount_percent if self.product.on_sale else 0
     
     def resolve_discounted_price(self, info):
         """Calculate discounted price"""
-        return self.discounted_price
+        if self.product.on_sale and self.product.discount_percent > 0:
+            return float(self.product.base_price * (1 - self.product.discount_percent / 100))
+        return float(self.product.base_price)
     
     def resolve_savings_amount(self, info):
         """Calculate savings amount"""
-        return self.savings_amount
+        if self.product.on_sale and self.product.discount_percent > 0:
+            return float(self.product.base_price * self.product.discount_percent / 100)
+        return 0.0
     
     def resolve_price_dropped(self, info):
         """Check if price dropped"""
-        return self.price_dropped
+        # This would require price history tracking - for now return False
+        return False
     
     def resolve_days_in_wishlist(self, info):
         """Calculate days since added to wishlist"""
@@ -111,7 +116,7 @@ class WishlistSettingsType(DjangoObjectType):
     """Wishlist settings type"""
     
     class Meta:
-        model = models.WishlistSettings
+        model = WishlistSettings
         interfaces = (relay.Node,)
         fields = '__all__'
 
@@ -163,24 +168,17 @@ class ToggleWishlist(Mutation):
         
         try:
             with transaction.atomic():
-                product = models.Product.objects.get(id=input.product_id)
+                product = Product.objects.get(id=input.product_id)
                 
                 # Check if item already exists
-                wishlist_item, created = models.Wishlist.objects.get_or_create(
+                wishlist_item, created = Wishlist.objects.get_or_create(
                     user=user,
-                    product=product,
-                    defaults={
-                        'priority': input.priority or 0,
-                        'notes': input.notes or '',
-                        'notify_on_stock': input.notify_on_stock,
-                        'notify_on_discount': input.notify_on_discount,
-                        'notify_price_drop': input.notify_price_drop,
-                    }
+                    product=product
                 )
                 
                 if created:
                     # Item was added
-                    wishlist_count = models.Wishlist.objects.filter(user=user).count()
+                    wishlist_count = Wishlist.objects.filter(user=user).count()
                     
                     return ToggleWishlist(
                         success=True,
@@ -192,7 +190,7 @@ class ToggleWishlist(Mutation):
                 else:
                     # Item was removed
                     wishlist_item.delete()
-                    wishlist_count = models.Wishlist.objects.filter(user=user).count()
+                    wishlist_count = Wishlist.objects.filter(user=user).count()
                     
                     return ToggleWishlist(
                         success=True,
@@ -202,7 +200,7 @@ class ToggleWishlist(Mutation):
                         wishlist_count=wishlist_count
                     )
                     
-        except models.Product.DoesNotExist:
+        except Product.DoesNotExist:
             return ToggleWishlist(
                 success=False, 
                 message="Product not found",
@@ -233,7 +231,7 @@ class ClearWishlist(Mutation):
         
         try:
             with transaction.atomic():
-                wishlist_items = models.Wishlist.objects.filter(user=user)
+                wishlist_items = Wishlist.objects.filter(user=user)
                 cleared_count = wishlist_items.count()
                 wishlist_items.delete()
                 
@@ -275,12 +273,12 @@ class UpdateWishlistItem(Mutation):
         
         try:
             with transaction.atomic():
-                wishlist_item = models.Wishlist.objects.get(
+                wishlist_item = Wishlist.objects.get(
                     id=wishlist_item_id,
                     user=user
                 )
                 
-                # Update fields
+                # Update fields (only those that exist in the model)
                 for field, value in kwargs.items():
                     if value is not None and hasattr(wishlist_item, field):
                         setattr(wishlist_item, field, value)
@@ -333,7 +331,7 @@ class MoveToCart(Mutation):
         
         try:
             with transaction.atomic():
-                wishlist_item = models.Wishlist.objects.get(
+                wishlist_item = Wishlist.objects.get(
                     id=kwargs['wishlist_item_id'],
                     user=user
                 )
@@ -346,14 +344,14 @@ class MoveToCart(Mutation):
                     user=user,
                     product=wishlist_item.product,
                     material_id=kwargs.get('material_id'),
-                    width=kwargs.get('width'),
-                    height=kwargs.get('height'),
                     defaults={
                         'quantity': kwargs.get('quantity', 1),
-                        'dimension_unit': kwargs.get('dimension_unit', 'cm'),
-                        'delivery_type': kwargs.get('delivery_type', 'home'),
-                        'unit_price': wishlist_item.product.base_price,
-                        'material_price': 0,  # Calculate if material provided
+                        'options': {
+                            'width': kwargs.get('width'),
+                            'height': kwargs.get('height'),
+                            'dimension_unit': kwargs.get('dimension_unit', 'cm'),
+                            'delivery_type': kwargs.get('delivery_type', 'home')
+                        }
                     }
                 )
                 
@@ -404,7 +402,7 @@ class UpdateWishlistSettings(Mutation):
         
         try:
             with transaction.atomic():
-                settings, created = models.WishlistSettings.objects.get_or_create(
+                settings, created = WishlistSettings.objects.get_or_create(
                     user=user,
                     defaults={
                         'items_per_page': 20,
@@ -453,7 +451,7 @@ class WishlistQuery(ObjectType):
         if not info.context.user.is_authenticated:
             return []
         
-        return models.Wishlist.objects.active().for_user(info.context.user)
+        return Wishlist.objects.active().for_user(info.context.user)
     
     def resolve_wishlist_item(self, info, id):
         """Get specific wishlist item"""
@@ -461,11 +459,11 @@ class WishlistQuery(ObjectType):
             return None
         
         try:
-            return models.Wishlist.objects.get(
+            return Wishlist.objects.get(
                 id=id,
                 user=info.context.user
             )
-        except models.Wishlist.DoesNotExist:
+        except Wishlist.DoesNotExist:
             return None
     
     def resolve_wishlist_count(self, info):
@@ -473,7 +471,7 @@ class WishlistQuery(ObjectType):
         if not info.context.user.is_authenticated:
             return 0
         
-        return models.Wishlist.objects.filter(user=info.context.user).count()
+        return Wishlist.objects.filter(user=info.context.user).count()
     
     def resolve_most_wishlisted_products(self, info):
         """Get most wishlisted products (admin only)"""
@@ -499,10 +497,10 @@ class WishlistQuery(ObjectType):
             return None
         
         try:
-            return models.WishlistSettings.objects.get(user=info.context.user)
-        except models.WishlistSettings.DoesNotExist:
+            return WishlistSettings.objects.get(user=info.context.user)
+        except WishlistSettings.DoesNotExist:
             # Return default settings
-            return models.WishlistSettings(
+            return WishlistSettings(
                 user=info.context.user,
                 items_per_page=20,
                 sort_by='created_at',
@@ -522,22 +520,9 @@ class WishlistNode(DjangoObjectType, IsAuthenticatedMixin):
     product = Field('ProductNode')
     
     class Meta:
-        model = models.Wishlist
+        model = Wishlist
         interfaces = (relay.Node,)
         fields = '__all__'
-
-
-class AlertNode(DjangoObjectType):
-    """Alert node with enhanced filtering"""
-    class Meta:
-        model = models.Alert
-        interfaces = (relay.Node,)
-        fields = '__all__'
-        filter_fields = {
-            'user': ['exact'],
-            'type': ['exact'],
-            'is_active': ['exact'],
-        }
 
 
 # Mutation Class

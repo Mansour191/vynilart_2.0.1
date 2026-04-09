@@ -83,9 +83,9 @@
                         المادة: {{ item.material.nameAr || item.material.nameEn }}
                       </div>
 
-                      <!-- Dimensions -->
-                      <div v-if="item.width && item.height" class="text-caption text-medium-emphasis mb-2">
-                        الأبعاد: {{ item.width }}×{{ item.height }} {{ item.dimensionUnit }}
+                      <!-- Dimensions from options JSON -->
+                      <div v-if="item.dimensions" class="text-caption text-medium-emphasis mb-2">
+                        {{ item.dimensions }}
                       </div>
 
                       <!-- Price -->

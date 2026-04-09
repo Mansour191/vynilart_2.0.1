@@ -212,9 +212,9 @@ class PromotionCoupon(models.Model):
         return max(Decimal('0'), discount)
 
 
-class CouponUsage(models.Model):
+class PromotionCouponUsage(models.Model):
     """
-    Track coupon usage for analytics and fraud prevention
+    Track promotion coupon usage for analytics and fraud prevention
     """
     coupon = models.ForeignKey(
         PromotionCoupon, 
@@ -224,12 +224,12 @@ class CouponUsage(models.Model):
     user = models.ForeignKey(
         'api.User',
         on_delete=models.CASCADE,
-        related_name='coupon_usages'
+        related_name='promotion_coupon_usages'
     )
     order = models.ForeignKey(
         'api.Order',
         on_delete=models.CASCADE,
-        related_name='coupon_usages'
+        related_name='promotion_coupon_usages'
     )
     
     # Usage details
@@ -244,6 +244,7 @@ class CouponUsage(models.Model):
     used_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'api_promotion_coupon_usage'
         indexes = [
             models.Index(fields=['coupon']),
             models.Index(fields=['user']),

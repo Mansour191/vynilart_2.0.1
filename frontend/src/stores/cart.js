@@ -34,7 +34,7 @@ export const useCartStore = defineStore('cart', () => {
 
   const subtotal = computed(() => {
     return items.value.reduce((total, item) => {
-      return total + (item.unitPrice + item.materialPrice) * item.quantity
+      return total + (item.subtotal || 0)
     }, 0)
   })
 
@@ -71,22 +71,66 @@ export const useCartStore = defineStore('cart', () => {
     isLoading.value = true
     
     try {
-      const response = await fetch('/api/cart/', {
+      const query = `
+        query {
+          myCart {
+            id
+            quantity
+            options
+            createdAt
+            updatedAt
+            product {
+              id
+              nameAr
+              nameEn
+              basePrice
+              stock
+              isActive
+              images {
+                id
+                imageUrl
+                isMain
+              }
+            }
+            material {
+              id
+              nameAr
+              nameEn
+              pricePerM2
+            }
+            productDetails
+            subtotal
+            totalWithDiscount
+            finalTotal
+            isAvailable
+            maxQuantity
+            currentUnitPrice
+            currentMaterialPrice
+            priceChanged
+            weight
+            dimensions
+          }
+        }
+      `
+
+      const response = await fetch('/graphql', {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ query })
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        items.value = data.items || []
-        selectedWilaya.value = data.wilaya || null
-        deliveryType.value = data.deliveryType || 'home'
-        appliedCoupon.value = data.appliedCoupon || null
-        lastFetched.value = Date.now()
-        saveToStorage()
+      const result = await response.json()
+      
+      if (result.errors) {
+        throw new Error(result.errors[0].message)
       }
+
+      items.value = result.data.myCart || []
+      lastFetched.value = Date.now()
+      saveToStorage()
     } catch (error) {
       console.error('Error fetching cart:', error)
       // Fallback to localStorage
@@ -110,13 +154,9 @@ export const useCartStore = defineStore('cart', () => {
             cartItem {
               id
               quantity
-              unitPrice
-              materialPrice
-              subtotal
-              totalWithDiscount
-              finalTotal
-              isAvailable
-              maxQuantity
+              options
+              createdAt
+              updatedAt
               product {
                 id
                 nameAr
@@ -136,30 +176,36 @@ export const useCartStore = defineStore('cart', () => {
                 nameEn
                 pricePerM2
               }
-              wilaya {
-                id
-                nameAr
-                homeDeliveryPrice
-                stopDeskPrice
-                isActive
-              }
+              productDetails
+              subtotal
+              totalWithDiscount
+              finalTotal
+              isAvailable
+              maxQuantity
+              currentUnitPrice
+              currentMaterialPrice
+              priceChanged
+              weight
+              dimensions
             }
             cartSummary
           }
         }
       `
 
+      // Prepare options JSON with dimensions if provided
+      const optionsData = {}
+      if (options.width) optionsData.width = options.width
+      if (options.height) optionsData.height = options.height
+      if (options.dimensionUnit) optionsData.dimensionUnit = options.dimensionUnit
+      if (options.options) Object.assign(optionsData, options.options)
+
       const variables = {
         input: {
           productId: product.id,
           materialId: options.materialId || null,
           quantity: options.quantity || 1,
-          width: options.width || null,
-          height: options.height || null,
-          dimensionUnit: options.dimensionUnit || 'cm',
-          deliveryType: options.deliveryType || deliveryType.value,
-          wilayaId: selectedWilaya.value?.id || null,
-          options: JSON.stringify(options.options || {})
+          options: JSON.stringify(optionsData)
         }
       }
 
@@ -191,7 +237,7 @@ export const useCartStore = defineStore('cart', () => {
         
         // Show success toast
         toast({
-          title: '✅ تمت الإضافة',
+          title: '× Done',
           text: addToCart.message,
           color: 'success',
           timeout: 3000
@@ -209,8 +255,8 @@ export const useCartStore = defineStore('cart', () => {
       
       // Show error toast
       toast({
-        title: '❌ خطأ',
-        text: error.message || 'فشل إضافة المنتج للسلة',
+        title: '× Error',
+        text: error.message || 'Failed to add product to cart',
         color: 'error',
         timeout: 5000
       })

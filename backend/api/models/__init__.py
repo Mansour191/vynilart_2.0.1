@@ -17,8 +17,9 @@ from .shipping import Shipping, ShippingMethod, ShippingPrice
 
 # Order and Payment Models
 from .order import (
-    Order, OrderItem, OrderTimeline, Payment, Coupon
+    Order, OrderItem, OrderTimeline, Payment
 )
+from .coupon import Coupon
 
 # Cart and Commerce Models
 from .cart import CartItem
@@ -27,6 +28,7 @@ from .promotion import PromotionCoupon
 # Wishlist and Alert Models
 from .wishlist import Wishlist, WishlistSettings
 from .alert import Alert, AlertRule
+from .smart_alert import SmartAlert
 
 # Review and Design Models
 from .review import (
@@ -76,7 +78,7 @@ __all__ = [
     'CartItem', 'PromotionCoupon',
     
     # Wishlist models
-    'Wishlist', 'WishlistSettings', 'Alert', 'AlertRule',
+    'Wishlist', 'WishlistSettings', 'Alert', 'AlertRule', 'SmartAlert',
     
     # Review models
     'Review', 'ReviewReport', 'DesignCategory', 'Design',

@@ -118,6 +118,22 @@ router.afterEach((to, from) => {
   // Log navigation for security auditing
   console.log(`📍 Navigation: ${from.path} → ${to.path}`)
   
+  // Track page view for behavior analytics (async, non-blocking)
+  import('@/services/TrackingService').then(({ trackingService }) => {
+    trackingService.trackPageView({
+      path: to.path,
+      fullPath: to.fullPath,
+      name: to.name,
+      query: to.query,
+      params: to.params
+    }).catch(error => {
+      // Silently fail to not disrupt user experience
+      console.warn('Page tracking failed:', error)
+    })
+  }).catch(error => {
+    console.warn('Failed to load tracking service:', error)
+  })
+  
   // Clear sensitive data from memory when leaving sensitive pages
   if (from.path.startsWith('/dashboard') || from.path.startsWith('/investor')) {
     // Optional: Clear any sensitive in-memory data

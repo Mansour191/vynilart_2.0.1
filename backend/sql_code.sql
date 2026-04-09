@@ -246,7 +246,29 @@ CREATE TABLE IF NOT EXISTS api_shipping (
     updated_at DATETIME(6) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Orders
+-- Shipping Methods
+CREATE TABLE IF NOT EXISTS api_shipping_method (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    organization_id INT NOT NULL, -- الربط مع المؤسسة (مثل Paclos)
+    name VARCHAR(100) NOT NULL,
+    provider_name VARCHAR(100), 
+    base_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    estimated_days VARCHAR(50),
+    is_active TINYINT(1) DEFAULT 1,
+    description TEXT,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    
+    -- الفهارس والمفاتيح الأجنبية
+    INDEX shipping_active_idx (is_active),
+    INDEX shipping_org_idx (organization_id),
+    CONSTRAINT fk_shipping_organization 
+        FOREIGN KEY (organization_id) 
+        REFERENCES api_organization(id) 
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Orders Table (Updated with Shipping Method FK)
 CREATE TABLE IF NOT EXISTS api_order (
     id INT AUTO_INCREMENT PRIMARY KEY,
     order_number VARCHAR(50) NOT NULL UNIQUE,
@@ -256,6 +278,10 @@ CREATE TABLE IF NOT EXISTS api_order (
     email VARCHAR(254),
     shipping_address TEXT NOT NULL,
     wilaya_id VARCHAR(10),
+    
+    -- إضافة الحقل هنا ليكون ضمن بنية الجدول
+    shipping_method_id INT NULL, 
+    
     subtotal DECIMAL(10,2) NOT NULL,
     shipping_cost DECIMAL(10,2) DEFAULT 0,
     tax DECIMAL(10,2) DEFAULT 0,
@@ -271,9 +297,22 @@ CREATE TABLE IF NOT EXISTS api_order (
     last_synced_at DATETIME(6),
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL,
+
+    -- الفهارس (Indexes)
     INDEX api_order_order_number_like (order_number),
-    FOREIGN KEY (user_id) REFERENCES auth_user(id) ON DELETE SET NULL,
-    FOREIGN KEY (wilaya_id) REFERENCES api_shipping(wilaya_id) ON DELETE SET NULL
+    INDEX api_order_status_idx (status),
+    INDEX api_order_shipping_method_idx (shipping_method_id),
+
+    -- جميع المفاتيح الأجنبية (Foreign Keys)
+    CONSTRAINT fk_order_user 
+        FOREIGN KEY (user_id) REFERENCES auth_user(id) ON DELETE SET NULL,
+        
+    CONSTRAINT fk_order_wilaya 
+        FOREIGN KEY (wilaya_id) REFERENCES api_shipping(wilaya_id) ON DELETE SET NULL,
+        
+    CONSTRAINT fk_order_shipping_method 
+        FOREIGN KEY (shipping_method_id) REFERENCES api_shipping_method(id) ON DELETE SET NULL
+        
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Order Items
@@ -487,13 +526,19 @@ CREATE TABLE IF NOT EXISTS api_erpnextsynclog (
 -- Behavior Tracking
 CREATE TABLE IF NOT EXISTS api_behaviortracking (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
+    user_id INT,
+    session_id VARCHAR(255),
+    ip_address VARCHAR(45),
     action VARCHAR(100) NOT NULL,
     target_type VARCHAR(50),
     target_id INT,
+    duration INT DEFAULT 0,
     metadata JSON,
     created_at DATETIME(6) NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES auth_user(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES auth_user(id) ON DELETE CASCADE,
+    INDEX api_behaviortracking_session_id_idx (session_id),
+    INDEX api_behaviortracking_action_idx (action),
+    INDEX api_behaviortracking_created_at_idx (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Forecasts
@@ -503,6 +548,9 @@ CREATE TABLE IF NOT EXISTS api_forecast (
     forecast_type VARCHAR(50) NOT NULL,
     period VARCHAR(20) NOT NULL,
     predicted_demand INT,
+    actual_demand INT,
+    error_margin DECIMAL(5,2),
+    algorithm_used VARCHAR(100),
     confidence DECIMAL(5,2),
     created_at DATETIME(6) NOT NULL,
     FOREIGN KEY (product_id) REFERENCES api_product(id) ON DELETE CASCADE

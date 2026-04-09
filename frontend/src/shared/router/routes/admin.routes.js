@@ -181,6 +181,20 @@ export default [
         },
       },
       {
+        path: 'forecasting/details',
+        name: 'ForecastDetails',
+        component: () =>
+          import(
+            /* webpackChunkName: "dashboard-forecasting" */ '@/modules/admin/views/forecasting/components/ForecastDetails.vue'
+          ),
+        meta: {
+          title: 'تفاصيل التوقعات',
+          icon: 'fa-solid fa-chart-line-variant',
+          requiresAuth: true,
+          permission: 'view_forecast',
+        },
+      },
+      {
         path: 'recommendations',
         name: 'recommendations',
         component: () =>

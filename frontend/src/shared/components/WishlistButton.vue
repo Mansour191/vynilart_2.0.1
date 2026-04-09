@@ -121,11 +121,27 @@ const checkWishlistStatus = async () => {
   if (!isAuthenticated.value) return;
   
   try {
-    const wishlistItems = await WishlistService.getWishlistItems();
-    isInWishlist.value = wishlistItems.some(item => item.id === props.item.id || item.product?.id === props.item.id);
-    wishlistCount.value = wishlistItems.length;
+    // Use the optimized isInWishlist method
+    const inWishlist = await WishlistService.isInWishlist(props.item.id || props.item.productId);
+    isInWishlist.value = inWishlist;
+    
+    // Also update count
+    await loadWishlistCount();
   } catch (error) {
     console.error('❌ Error checking wishlist status:', error);
+    // Fallback to getting all items
+    try {
+      const wishlistItems = await WishlistService.getWishlistItems();
+      isInWishlist.value = wishlistItems.some(item => 
+        item.productId === props.item.id || 
+        item.productId === props.item.productId || 
+        item.product?.id === props.item.id ||
+        item.product?.id === props.item.productId
+      );
+      wishlistCount.value = wishlistItems.length;
+    } catch (fallbackError) {
+      console.error('❌ Fallback also failed:', fallbackError);
+    }
   }
 };
 
@@ -138,28 +154,15 @@ const toggleWishlist = async () => {
   loading.value = true;
   
   try {
-    if (isInWishlist.value) {
-      // Remove from wishlist
-      const response = await WishlistService.removeFromWishlist(props.item.id);
+    // Use the new toggleWishlist method from WishlistService
+    const response = await WishlistService.toggleWishlist(props.item.id || props.item.productId);
+    
+    if (response.success) {
+      // Update state immediately based on response
+      isInWishlist.value = response.is_in_wishlist;
+      wishlistCount.value = response.wishlist_count || 0;
       
-      if (response.success) {
-        isInWishlist.value = false;
-        wishlistCount.value = Math.max(0, wishlistCount.value - 1);
-        showNotification('removed');
-        
-        // Update Vuex store
-        store.dispatch('user/removeFromWishlist', props.item.id);
-      } else {
-        console.error('❌ Failed to remove from wishlist:', response.error);
-        showNotification('error', t('failedToRemove') || 'فشل في الإزالة من المفضلة');
-      }
-    } else {
-      // Add to wishlist
-      const response = await WishlistService.addToWishlist(props.item);
-      
-      if (response.success) {
-        isInWishlist.value = true;
-        wishlistCount.value += 1;
+      if (response.is_in_wishlist) {
         justAdded.value = true;
         showNotification('added');
         
@@ -171,9 +174,14 @@ const toggleWishlist = async () => {
           justAdded.value = false;
         }, 600);
       } else {
-        console.error('❌ Failed to add to wishlist:', response.error);
-        showNotification('error', t('failedToAdd') || 'فشل في الإضافة إلى المفضلة');
+        showNotification('removed');
+        
+        // Update Vuex store
+        store.dispatch('user/removeFromWishlist', props.item.id || props.item.productId);
       }
+    } else {
+      console.error('❌ Failed to toggle wishlist:', response.message);
+      showNotification('error', response.message || t('wishlistError') || 'حدث خطأ في المفضلة');
     }
   } catch (error) {
     console.error('❌ Error toggling wishlist:', error);
@@ -224,10 +232,18 @@ const loadWishlistCount = async () => {
   if (!isAuthenticated.value) return;
   
   try {
-    const wishlistItems = await WishlistService.getWishlistItems();
-    wishlistCount.value = wishlistItems.length;
+    // Use the new getWishlistCount method for better performance
+    const count = await WishlistService.getWishlistCount();
+    wishlistCount.value = count;
   } catch (error) {
     console.error('❌ Error loading wishlist count:', error);
+    // Fallback to getting all items
+    try {
+      const wishlistItems = await WishlistService.getWishlistItems();
+      wishlistCount.value = wishlistItems.length;
+    } catch (fallbackError) {
+      console.error('❌ Fallback also failed:', fallbackError);
+    }
   }
 };
 

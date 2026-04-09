@@ -7,7 +7,7 @@ from decimal import Decimal
 import uuid
 from datetime import datetime
 from .product import Product, Material
-from .shipping import Shipping
+from .shipping import Shipping, ShippingMethod
 
 
 class Order(models.Model):
@@ -36,6 +36,14 @@ class Order(models.Model):
         related_name='orders',
         db_column='wilaya_id'
     )
+    shipping_method = models.ForeignKey(
+        ShippingMethod,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='orders',
+        db_column='shipping_method_id'
+    )
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     shipping_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -49,6 +57,14 @@ class Order(models.Model):
     erpnext_sales_order_id = models.CharField(max_length=100, blank=True, null=True)
     sync_error = models.TextField(blank=True, null=True)
     last_synced_at = models.DateTimeField(blank=True, null=True)
+    coupon = models.ForeignKey(
+        'api.Coupon',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='orders',
+        db_column='coupon_id'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -60,7 +76,9 @@ class Order(models.Model):
             models.Index(fields=['status']),
             models.Index(fields=['created_at']),
             models.Index(fields=['wilaya']),
+            models.Index(fields=['shipping_method']),
             models.Index(fields=['payment_method']),
+            models.Index(fields=['coupon']),
         ]
         ordering = ['-created_at']
 
@@ -92,7 +110,41 @@ class Order(models.Model):
         """
         Calculate total amount based on subtotal, shipping, tax, and discount
         """
+        # If shipping_method is selected, use its base_cost
+        if self.shipping_method and not self.shipping_cost:
+            self.shipping_cost = self.shipping_method.base_cost
+        
         return (self.subtotal + self.shipping_cost + self.tax - self.discount_amount)
+
+    def save(self, *args, **kwargs):
+        """
+        Override save method to generate automatic order_number
+        and calculate shipping cost
+        """
+        if not self.order_number:
+            # Generate order number with format: VA-YYYYMMDD-XXXXX
+            today = datetime.now().strftime('%Y%m%d')
+            # Get today's order count
+            today_count = Order.objects.filter(
+                created_at__date=datetime.now().date()
+            ).count()
+            # Generate unique order number
+            self.order_number = f"VA-{today}-{today_count + 1:05d}"
+            
+            # Ensure uniqueness by checking if order number already exists
+            while Order.objects.filter(order_number=self.order_number).exists():
+                today_count += 1
+                self.order_number = f"VA-{today}-{today_count + 1:05d}"
+        
+        # Auto-calculate shipping cost if shipping method is set but cost is not
+        if self.shipping_method and (self.shipping_cost == 0 or self.shipping_cost is None):
+            self.shipping_cost = self.shipping_method.base_cost
+        
+        # Recalculate total amount
+        if hasattr(self, 'subtotal') and self.subtotal is not None:
+            self.total_amount = self.calculate_total_amount()
+        
+        super().save(*args, **kwargs)
 
 
 class OrderItem(models.Model):
@@ -207,35 +259,3 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment {self.id} - {self.order.order_number}"
-
-
-class Coupon(models.Model):
-    """
-    Coupon model matching api_coupon table
-    """
-    id = models.AutoField(primary_key=True)
-    code = models.CharField(max_length=50, unique=True)
-    discount_type = models.CharField(max_length=20, default='percentage')
-    discount_value = models.DecimalField(max_digits=10, decimal_places=2)
-    min_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    max_discount = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
-    usage_limit = models.IntegerField(blank=True, null=True)
-    used_count = models.IntegerField(default=0)
-    is_active = models.BooleanField(default=True)
-    valid_from = models.DateTimeField(blank=True, null=True)
-    valid_to = models.DateTimeField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'api_coupon'
-        indexes = [
-            models.Index(fields=['code']),
-            models.Index(fields=['is_active']),
-            models.Index(fields=['valid_from']),
-            models.Index(fields=['valid_to']),
-        ]
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"Coupon {self.code}"

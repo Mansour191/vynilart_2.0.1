@@ -13,12 +13,18 @@ from .models import (
     ProductVariant, ProductMaterial, Shipping, Order, OrderItem, 
     OrderTimeline, Payment, Coupon, CartItem, PromotionCoupon, 
     CouponUsage, CouponCampaign, Wishlist, WishlistSettings, 
-    Alert, AlertRule, Review, ReviewReport, DesignCategory, 
+    Alert, AlertRule, SmartAlert, Review, ReviewReport, DesignCategory, 
     Design, Notification, ErpNextSyncLog, BehaviorTracking, 
     Forecast, CustomerSegment, CustomerSegmentUsers, PricingEngine, 
     BlogCategory, BlogPost, ConversationHistory, DashboardSettings,
     Organization, Social, PlatformType
 )
+from .schema.cart_schema import CartQuery, CartMutation, CartItemType
+from .schema.wishlist_schema import WishlistQuery, WishlistMutation, WishlistType, WishlistSettingsType
+from .schema.review_schema import ReviewQuery, ReviewMutation, ReviewType, ReviewReportType
+from .schema.design_schema import DesignQuery, DesignMutation, DesignType, DesignCategoryType
+from .schema.notification_schema import NotificationQuery, NotificationMutation, NotificationType, AlertType
+from .schema.smart_alert_schema import SmartAlertQuery, SmartAlertMutation, SmartAlertType
 
 User = get_user_model()
 
@@ -397,6 +403,57 @@ class OrganizationType(DjangoObjectType):
             is_active=True, 
             platform_type=PlatformType.PUBLIC
         ).order_by('order_index')
+
+
+# DesignCategory Type
+class DesignCategoryType(DjangoObjectType):
+    """
+    GraphQL type for DesignCategory model
+    """
+    name = String()
+    
+    class Meta:
+        model = DesignCategory
+        fields = '__all__'
+        interfaces = (relay.Node,)
+        filter_fields = {
+            'id': ['exact'],
+            'name_ar': ['exact', 'icontains'],
+            'name_en': ['exact', 'icontains'],
+            'slug': ['exact', 'icontains'],
+            'is_active': ['exact'],
+            'design_count': ['exact', 'lt', 'lte', 'gt', 'gte'],
+        }
+    
+    def resolve_name(self, info):
+        """
+        Resolve name based on current language (fallback to Arabic if English not available)
+        """
+        # Get language from context or default to Arabic
+        language = getattr(info.context, 'LANGUAGE_CODE', 'ar')
+        if language == 'en' and self.name_en:
+            return self.name_en
+        return self.name_ar
+
+
+# Design Type
+class DesignType(DjangoObjectType):
+    """
+    GraphQL type for Design model
+    """
+    class Meta:
+        model = Design
+        fields = '__all__'
+        interfaces = (relay.Node,)
+        filter_fields = {
+            'id': ['exact'],
+            'name': ['exact', 'icontains'],
+            'category': ['exact'],
+            'user': ['exact'],
+            'is_featured': ['exact'],
+            'is_active': ['exact'],
+            'status': ['exact'],
+        }
 
 
 # Social Type
@@ -812,7 +869,7 @@ class RemoveMaterialFromProduct(Mutation):
 
 
 # Root Query
-class Query(ObjectType):
+class Query(ObjectType, CartQuery, WishlistQuery, ReviewQuery, DesignQuery, NotificationQuery, SmartAlertQuery):
     """
     Root query for API models
     """
@@ -876,10 +933,27 @@ class Query(ObjectType):
     social = relay.Node.Field(SocialType)
     all_social = DjangoFilterConnectionField(SocialType)
     public_social_links = List(SocialType)
+    
+    # DesignCategory queries
+    design_category = relay.Node.Field(DesignCategoryType)
+    all_design_categories = DjangoFilterConnectionField(DesignCategoryType)
+    categories = List(DesignCategoryType)
+    
+    def resolve_categories(self, info):
+        """
+        Resolve active design categories ordered by design_count (most designs first)
+        """
+        return DesignCategory.objects.filter(
+            is_active=True
+        ).order_by('-design_count')
+    
+    # Design queries
+    design = relay.Node.Field(DesignType)
+    all_designs = DjangoFilterConnectionField(DesignType)
 
 
 # Root Mutation
-class Mutation(ObjectType):
+class Mutation(ObjectType, CartMutation, WishlistMutation, ReviewMutation, DesignMutation, NotificationMutation, SmartAlertMutation):
     """
     Root mutation for API models
     """
@@ -913,4 +987,11 @@ __all__ = [
     'ProductImageType',
     'OrganizationType',
     'SocialType',
+    'CartItemType',
+    'WishlistType',
+    'WishlistSettingsType',
+    'ReviewType',
+    'ReviewReportType',
+    'DesignCategoryType',
+    'DesignType',
 ]

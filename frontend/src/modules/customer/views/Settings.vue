@@ -223,68 +223,67 @@
               </v-row>
             </v-window-item>
 
-            <!-- Preferences Settings -->
-            <v-window-item value="preferences">
+    <!-- Preferences Settings -->
+    <v-window-item value="preferences">
+      <v-row>
+        <v-col cols="12" md="8">
+          <v-card class="settings-section" elevation="2">
+            <v-card-title class="text-h6">التفضيلات</v-card-title>
+            
+            <v-card-text>
               <v-row>
-                <v-col cols="12" md="8">
-                  <v-card class="settings-section" elevation="2">
-                    <v-card-title class="text-h6">التفضيلات</v-card-title>
-                    
-                    <v-card-text>
-                      <v-row>
-                        <v-col cols="12" sm="6">
-                          <v-select
-                            v-model="preferences.language"
-                            :items="languageOptions"
-                            label="اللغة"
-                            variant="outlined"
-                            prepend-inner-icon="mdi-translate"
-                          />
-                        </v-col>
-                        <v-col cols="12" sm="6">
-                          <v-select
-                            v-model="preferences.theme"
-                            :items="themeOptions"
-                            label="المظهر"
-                            variant="outlined"
-                            prepend-inner-icon="mdi-palette"
-                          />
-                        </v-col>
-                        <v-col cols="12">
-                          <v-select
-                            v-model="preferences.currency"
-                            :items="currencyOptions"
-                            label="العملة"
-                            variant="outlined"
-                            prepend-inner-icon="mdi-currency"
-                          />
-                        </v-col>
-                        <v-col cols="12">
-                          <v-select
-                            v-model="preferences.timezone"
-                            :items="timezoneOptions"
-                            label="المنطقة الزمنية"
-                            variant="outlined"
-                            prepend-inner-icon="mdi-clock"
-                          />
-                        </v-col>
-                      </v-row>
-                    </v-card-text>
-                    
-                    <v-card-actions>
-                      <v-btn
-                        color="primary"
-                        @click="updatePreferences"
-                        :loading="saving"
-                      >
-                        حفظ التفضيلات
-                      </v-btn>
-                    </v-card-actions>
-                  </v-card>
+                <v-col cols="12" sm="6">
+                  <v-select
+                    v-model="preferences.language"
+                    :items="languageOptions"
+                    label="اللغة"
+                    variant="outlined"
+                    prepend-inner-icon="mdi-translate"
+                  />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-select
+                    v-model="preferences.theme"
+                    :items="themeOptions"
+                    label="المظهر"
+                    variant="outlined"
+                    prepend-inner-icon="mdi-palette"
+                  />
+                </v-col>
+                <v-col cols="12">
+                  <v-select
+                    v-model="preferences.currency"
+                    :items="currencyOptions"
+                    label="العملة"
+                    variant="outlined"
+                    prepend-inner-icon="mdi-currency"
+                  />
+                </v-col>
+                <v-col cols="12">
+                  <v-select
+                    v-model="preferences.timezone"
+                    :items="timezoneOptions"
+                    label="المنطقة الزمنية"
+                    variant="outlined"
+                    prepend-inner-icon="mdi-clock"
+                  />
                 </v-col>
               </v-row>
-            </v-window-item>
-          </v-window>
+            </v-card-text>
+            
+            <v-card-actions>
+              <v-btn
+                color="primary"
+                @click="updatePreferences"
+                :loading="saving"
+              >
+                حفظ التفضيلات
+              </v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-window-item>
         </v-card-text>
       </v-card>
     </v-container>
@@ -338,6 +337,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue';
 import SettingsService from '@/integration/services/SettingsService';
+import SmartAlertManager from '@/components/alerts/SmartAlertManager.vue';
 
 const settingsService = SettingsService;
 
@@ -387,7 +387,8 @@ const tabs = ref([
   { id: 'profile', label: 'الملف الشخصي', icon: 'mdi-account' },
   { id: 'privacy', label: 'الخصوصية', icon: 'mdi-lock' },
   { id: 'security', label: 'الأمان', icon: 'mdi-shield-account' },
-  { id: 'preferences', label: 'التفضيلات', icon: 'mdi-cog' }
+  { id: 'preferences', label: 'التفضيلات', icon: 'mdi-cog' },
+  { id: 'alerts', label: 'إعدادات التنبيهات الذكية', icon: 'mdi-bell' }
 ]);
 
 const languageOptions = [

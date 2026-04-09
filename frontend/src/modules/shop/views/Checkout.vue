@@ -567,7 +567,7 @@ const submitOrder = async () => {
   const shippingValidation = validateShippingSelection();
   if (!shippingValidation.isValid) {
     NotificationService.error(
-      'خطأ في الشحن',
+      'Shipping Error',
       shippingValidation.message
     );
     return;
@@ -575,62 +575,101 @@ const submitOrder = async () => {
   
   submitting.value = true;
   try {
-    const orderData = {
-      customer: {
-        firstName: form.value.firstName,
-        lastName: form.value.lastName,
-        email: form.value.email,
-        phone: form.value.phone
-      },
-      shipping: {
-        address: form.value.address,
-        wilaya: form.value.wilaya,
-        deliveryType: selectedShipping.value?.deliveryType || 'home_delivery',
-        estimatedDelivery: selectedShipping.value?.estimatedDays || '2-3 أيام'
-      },
-      payment: {
-        method: form.value.paymentMethod
-      },
-      coupon: appliedCoupon.value ? {
-        code: appliedCoupon.value.code,
-        discount_amount: appliedCoupon.value.discount_amount
-      } : null,
-      items: cartItems.value.map(item => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        price: item.price,
-        variant: item.variant
-      })),
-      notes: form.value.notes,
-      totals: {
-        subtotal: subtotal.value,
-        shippingCost: shippingCost.value,
-        discountAmount: discountAmount.value,
-        total: total.value
+    const mutation = `
+      mutation CreateOrder($input: OrderInput!, $items: [OrderItemInput!]!) {
+        createOrder(input: $input, items: $items) {
+          success
+          message
+          order {
+            id
+            order_number
+            customer_name
+            phone
+            email
+            shipping_address
+            wilaya {
+              id
+              name_ar
+            }
+            shipping_method {
+              id
+              name
+              base_cost
+            }
+            subtotal
+            shipping_cost
+            tax
+            discount_amount
+            total_amount
+            status
+            payment_method
+            payment_status
+            created_at
+            updated_at
+          }
+          errors
+        }
       }
+    `;
+    
+    const variables = {
+      input: {
+        customer_name: `${form.value.firstName} ${form.value.lastName}`,
+        phone: form.value.phone,
+        email: form.value.email,
+        shipping_address: form.value.address,
+        wilaya_id: form.value.wilaya,
+        shipping_method_id: form.value.shippingMethodId,
+        subtotal: subtotal.value,
+        shipping_cost: shippingCost.value,
+        tax: 0,
+        discount_amount: discountAmount.value,
+        coupon_code: appliedCoupon.value?.code,
+        payment_method: form.value.paymentMethod,
+        notes: form.value.notes
+      },
+      items: cartItems.value.map(item => ({
+        product_id: item.productId,
+        material_id: item.materialId,
+        width: item.width || 10,
+        height: item.height || 10,
+        dimension_unit: 'cm',
+        quantity: item.quantity,
+        price: item.price
+      }))
     };
-
-    const order = await CheckoutService.createOrder(orderData);
     
-    console.log('✅ Order created successfully:', order);
+    const response = await executeMutation(mutation, variables);
     
-    // Show success notification
-    NotificationService.success(
-      'تم تأكيد طلبك', 
-      `الطلب رقم ${order.orderNumber || order.id} قيد المعالجة الآن. شكراً لك!`
-    );
-    
-    // Clear cart
-    localStorage.removeItem('cart');
-    
-    // Navigate to success page
-    router.push(`/shop/order-success?orderId=${order.id || order.orderNumber}`);
+    if (response?.data?.createOrder?.success) {
+      const order = response.data.createOrder.order;
+      
+      console.log('Order created successfully:', order);
+      
+      // Show success notification
+      NotificationService.success(
+        'Order Confirmed',
+        `Order #${order.order_number} is now being processed. Thank you!`
+      );
+      
+      // Clear cart
+      localStorage.removeItem('cart');
+      
+      // Navigate to success page
+      router.push(`/shop/order-success?orderId=${order.id}`);
+    } else {
+      const errors = response?.data?.createOrder?.errors || ['Order creation failed'];
+      NotificationService.error(
+        'Order Creation Failed',
+        errors.join(', ')
+      );
+    }
     
   } catch (error) {
-    console.error('❌ Error submitting order:', error);
+    console.error('Error submitting order:', error);
     NotificationService.error(
-      'فشل في إنشاء الطلب',
-      error.message || 'حدث خطأ أثناء معالجة طلبك. يرجى المحاولة مرة أخرى.'
+      'Order Creation Failed',
+      error.message || 'An error occurred while processing your order. Please try again.'
     );
   } finally {
     submitting.value = false;
@@ -708,7 +747,8 @@ const removeCoupon = () => {
 const onShippingSelected = (shippingInfo) => {
   selectedShipping.value = shippingInfo;
   form.value.wilaya = shippingInfo.wilayaId;
-  console.log('✅ Shipping selected:', shippingInfo);
+  form.value.shippingMethodId = shippingInfo.shippingMethodId;
+  console.log('Shipping selected:', shippingInfo);
 };
 
 const onShippingPriceChange = (newTotal) => {

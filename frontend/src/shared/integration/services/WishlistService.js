@@ -1,11 +1,118 @@
 /**
  * WishlistService.js
- * خدمة إدارة قائمة المفضلة والربط مع قاعدة البيانات
+ * خدمة إدارة قائمة المفضلة والربط مع GraphQL API
  */
+
+import apolloClient from '@/shared/integration/services/apollo.js';
+import { gql } from '@apollo/client/core';
+
+// GraphQL Mutations
+const TOGGLE_WISHLIST = gql`
+  mutation ToggleWishlist($input: WishlistItemInput!) {
+    toggleWishlist(input: $input) {
+      success
+      message
+      isInWishlist
+      wishlistItem {
+        id
+        product {
+          id
+          name_ar
+          name_en
+          slug
+          base_price
+          stock
+          is_active
+          on_sale
+          discount_percent
+        }
+        created_at
+      }
+      wishlistCount
+    }
+  }
+`;
+
+const MOVE_TO_CART = gql`
+  mutation MoveToCart($wishlistItemId: ID!, $quantity: Int, $materialId: Int, $width: Float, $height: Float, $dimensionUnit: String, $deliveryType: String, $wilayaId: String) {
+    moveToCart(
+      wishlistItemId: $wishlistItemId
+      quantity: $quantity
+      materialId: $materialId
+      width: $width
+      height: $height
+      dimensionUnit: $dimensionUnit
+      deliveryType: $deliveryType
+      wilayaId: $wilayaId
+    ) {
+      success
+      message
+      cartItem {
+        id
+        product {
+          id
+          name_ar
+          name_en
+        }
+        quantity
+      }
+      removedFromWishlist
+    }
+  }
+`;
+
+const CLEAR_WISHLIST = gql`
+  mutation ClearWishlist {
+    clearWishlist {
+      success
+      message
+      clearedCount
+    }
+  }
+`;
+
+// GraphQL Queries
+const GET_MY_WISHLIST = gql`
+  query GetMyWishlist {
+    myWishlist {
+      id
+      product {
+        id
+        name_ar
+        name_en
+        slug
+        base_price
+        stock
+        is_active
+        on_sale
+        discount_percent
+        images {
+          id
+          image_url
+          is_main
+        }
+      }
+      created_at
+      isAvailable
+      isInStock
+      currentPrice
+      hasDiscount
+      discountPercentage
+      discountedPrice
+      savingsAmount
+      daysInWishlist
+    }
+  }
+`;
+
+const GET_WISHLIST_COUNT = gql`
+  query GetWishlistCount {
+    wishlistCount
+  }
+`;
 
 class WishlistService {
   constructor() {
-    this.apiBaseUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
     this.cache = new Map();
     this.cacheTTL = 5 * 60 * 1000; // 5 دقائق
   }
@@ -22,22 +129,16 @@ class WishlistService {
     }
 
     try {
-      const url = `${this.apiBaseUrl}/wishlist/`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this._getAuthToken()}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await apolloClient.query({
+        query: GET_MY_WISHLIST,
+        fetchPolicy: 'network-only'
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (response.errors) {
+        throw new Error(response.errors[0].message);
       }
 
-      const data = await response.json();
-      const items = this._transformWishlistItems(data.results || data);
-      
+      const items = this._transformWishlistItems(response.data.myWishlist || []);
       this._setCache(cacheKey, items);
       return items;
     } catch (error) {
@@ -47,94 +148,150 @@ class WishlistService {
   }
 
   /**
-   * إضافة منتج إلى المفضلة
+   * تبديل حالة المنتج في المفضلة (إضافة/إزالة)
    * @param {number} productId - معرف المنتج
-   * @returns {Promise<Object>} - العنصر المضاف
+   * @returns {Promise<Object>} - نتيجة العملية
    */
-  async addToWishlist(productId) {
+  async toggleWishlist(productId) {
     try {
-      const url = `${this.apiBaseUrl}/wishlist/`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this._getAuthToken()}`,
-          'Content-Type': 'application/json'
+      const response = await apolloClient.mutate({
+        mutation: TOGGLE_WISHLIST,
+        variables: {
+          input: {
+            productId: productId
+          }
         },
-        body: JSON.stringify({ product_id: productId })
+        update: (cache) => {
+          // Invalidate wishlist cache
+          cache.evict({ fieldName: 'myWishlist' });
+          cache.evict({ fieldName: 'wishlistCount' });
+        }
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (response.errors) {
+        throw new Error(response.errors[0].message);
       }
 
-      const data = await response.json();
-      const item = this._transformWishlistItem(data);
+      const result = response.data.toggleWishlist;
       
-      // Clear cache to force refresh
+      // Clear local cache
       this.cache.delete('wishlist_items');
       
-      return item;
+      return {
+        success: result.success,
+        message: result.message,
+        is_in_wishlist: result.isInWishlist,
+        wishlist_item: result.wishlistItem ? this._transformWishlistItem(result.wishlistItem) : null,
+        wishlist_count: result.wishlistCount
+      };
     } catch (error) {
-      console.error('❌ Error adding to wishlist:', error);
+      console.error('❌ Error toggling wishlist:', error);
       throw error;
     }
   }
 
   /**
-   * إزالة منتج من المفضلة
-   * @param {number} itemId - معرف عنصر المفضلة
-   * @returns {Promise<boolean>} - نجاح العملية
+   * نقل منتج من المفضلة إلى السلة
+   * @param {number} wishlistItemId - معرف عنصر المفضلة
+   * @param {Object} options - خيارات الإضافة للسلة
+   * @returns {Promise<Object>} - نتيجة العملية
    */
-  async removeFromWishlist(itemId) {
+  async moveToCart(wishlistItemId, options = {}) {
     try {
-      const url = `${this.apiBaseUrl}/wishlist/${itemId}/`;
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${this._getAuthToken()}`
+      const response = await apolloClient.mutate({
+        mutation: MOVE_TO_CART,
+        variables: {
+          wishlistItemId,
+          quantity: options.quantity || 1,
+          materialId: options.materialId,
+          width: options.width,
+          height: options.height,
+          dimensionUnit: options.dimensionUnit || 'cm',
+          deliveryType: options.deliveryType || 'home',
+          wilayaId: options.wilayaId
+        },
+        update: (cache) => {
+          // Invalidate wishlist cache
+          cache.evict({ fieldName: 'myWishlist' });
+          cache.evict({ fieldName: 'wishlistCount' });
         }
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (response.errors) {
+        throw new Error(response.errors[0].message);
       }
+
+      const result = response.data.moveToCart;
       
-      // Clear cache to force refresh
+      // Clear local cache
       this.cache.delete('wishlist_items');
       
-      return true;
+      return {
+        success: result.success,
+        message: result.message,
+        cart_item: result.cartItem,
+        removed_from_wishlist: result.removedFromWishlist
+      };
     } catch (error) {
-      console.error('❌ Error removing from wishlist:', error);
+      console.error('❌ Error moving to cart:', error);
       throw error;
     }
   }
 
   /**
    * تفريغ المفضلة بالكامل
-   * @returns {Promise<boolean>} - نجاح العملية
+   * @returns {Promise<Object>} - نتيجة العملية
    */
   async clearWishlist() {
     try {
-      const url = `${this.apiBaseUrl}/wishlist/clear/`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this._getAuthToken()}`,
-          'Content-Type': 'application/json'
+      const response = await apolloClient.mutate({
+        mutation: CLEAR_WISHLIST,
+        update: (cache) => {
+          // Invalidate wishlist cache
+          cache.evict({ fieldName: 'myWishlist' });
+          cache.evict({ fieldName: 'wishlistCount' });
         }
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (response.errors) {
+        throw new Error(response.errors[0].message);
       }
+
+      const result = response.data.clearWishlist;
       
-      // Clear cache to force refresh
+      // Clear local cache
       this.cache.delete('wishlist_items');
       
-      return true;
+      return {
+        success: result.success,
+        message: result.message,
+        cleared_count: result.clearedCount
+      };
     } catch (error) {
       console.error('❌ Error clearing wishlist:', error);
       throw error;
+    }
+  }
+
+  /**
+   * الحصول على عدد عناصر المفضلة
+   * @returns {Promise<number>} - عدد العناصر
+   */
+  async getWishlistCount() {
+    try {
+      const response = await apolloClient.query({
+        query: GET_WISHLIST_COUNT,
+        fetchPolicy: 'network-only'
+      });
+
+      if (response.errors) {
+        throw new Error(response.errors[0].message);
+      }
+
+      return response.data.wishlistCount || 0;
+    } catch (error) {
+      console.error('❌ Error getting wishlist count:', error);
+      return 0;
     }
   }
 
@@ -145,54 +302,11 @@ class WishlistService {
    */
   async isInWishlist(productId) {
     try {
-      const url = `${this.apiBaseUrl}/wishlist/check/?product_id=${productId}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this._getAuthToken()}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.in_wishlist || false;
+      const items = await this.getWishlistItems();
+      return items.some(item => item.productId === productId || item.product?.id === productId);
     } catch (error) {
       console.error('❌ Error checking wishlist status:', error);
       return false;
-    }
-  }
-
-  /**
-   * تبديل حالة المنتج في المفضلة
-   * @param {number} productId - معرف المنتج
-   * @returns {Promise<Object>} - النتيجة والعملية المنفذة
-   */
-  async toggleWishlistItem(productId) {
-    try {
-      const isInWishlist = await this.isInWishlist(productId);
-      
-      if (isInWishlist) {
-        // Find and remove from wishlist
-        const items = await this.getWishlistItems();
-        const item = items.find(item => item.productId === productId);
-        if (item) {
-          await this.removeFromWishlist(item.id);
-          return { action: 'removed', success: true };
-        }
-      } else {
-        // Add to wishlist
-        await this.addToWishlist(productId);
-        return { action: 'added', success: true };
-      }
-      
-      return { success: false };
-    } catch (error) {
-      console.error('❌ Error toggling wishlist item:', error);
-      throw error;
     }
   }
 
@@ -209,22 +323,28 @@ class WishlistService {
    * تحصر عنصر المفضلة واحد
    */
   _transformWishlistItem(item) {
+    const product = item.product || {};
     return {
       id: item.id,
-      productId: item.product_id,
-      name: item.name,
-      name_ar: item.name_ar,
-      name_en: item.name_en,
-      description: item.description,
-      price: item.price,
-      originalPrice: item.original_price,
-      discount: item.discount,
-      image: item.image || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?q=80&w=800&auto=format&fit=crop',
-      category: item.category,
+      productId: product.id,
+      name: product.name_ar || product.name,
+      name_ar: product.name_ar,
+      name_en: product.name_en,
+      slug: product.slug,
+      description: product.description_ar || product.description,
+      price: item.currentPrice || product.base_price,
+      originalPrice: product.base_price,
+      discount: item.discountPercentage || product.discount_percent,
+      image: product.images?.find(img => img.is_main)?.image_url || product.image || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?q=80&w=800&auto=format&fit=crop',
+      category: product.category?.name_ar,
       rating: item.rating || 4.5,
       reviews: item.reviews || 0,
-      inStock: item.in_stock !== false,
-      addedAt: item.added_at
+      inStock: item.isInStock !== false,
+      addedAt: item.created_at || item.addedAt,
+      isAvailable: item.isAvailable,
+      hasDiscount: item.hasDiscount,
+      savingsAmount: item.savingsAmount,
+      daysInWishlist: item.daysInWishlist
     };
   }
 
@@ -308,7 +428,7 @@ class WishlistService {
    * الحصول على توكن المصادقة
    */
   _getAuthToken() {
-    return localStorage.getItem('authToken') || 'mock-token';
+    return localStorage.getItem('token') || localStorage.getItem('authToken') || 'mock-token';
   }
 
   /**

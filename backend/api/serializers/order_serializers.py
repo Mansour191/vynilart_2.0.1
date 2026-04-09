@@ -106,13 +106,15 @@ class OrderTimelineSerializer(serializers.ModelSerializer):
 
 
 class PaymentSerializer(serializers.ModelSerializer):
-    """Payment serializer"""
+    """Payment serializer with enhanced validation"""
     is_successful = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    method_display = serializers.SerializerMethodField()
     
     class Meta:
         model = Payment
         fields = [
-            'id', 'order', 'amount', 'method', 'status',
+            'id', 'order', 'amount', 'method', 'method_display', 'status', 'status_display',
             'transaction_id', 'gateway_response',
             'created_at', 'updated_at', 'is_successful'
         ]
@@ -121,6 +123,93 @@ class PaymentSerializer(serializers.ModelSerializer):
     def get_is_successful(self, obj):
         """Check if payment was successful"""
         return obj.status == 'completed'
+    
+    def get_status_display(self, obj):
+        """Get human readable status"""
+        status_labels = {
+            'pending': 'في الانتظار',
+            'processing': 'قيد المعالجة',
+            'completed': 'مكتمل',
+            'failed': 'فشل',
+            'cancelled': 'ملغي',
+            'refunded': 'مسترد'
+        }
+        return status_labels.get(obj.status, obj.status)
+    
+    def get_method_display(self, obj):
+        """Get human readable payment method"""
+        method_labels = {
+            'cod': 'الدفع عند الاستلام',
+            'card': 'بطاقة ائتمانية',
+            'transfer': 'تحويل بنكي',
+            'ccp': 'CCP',
+            'edahabia': 'Edahabia',
+            'cib': 'CIB',
+            'wallet': 'محفظة إلكترونية'
+        }
+        return method_labels.get(obj.method, obj.method)
+    
+    def validate_amount(self, value):
+        """Validate payment amount"""
+        if value <= 0:
+            raise serializers.ValidationError("المبلغ يجب أن يكون أكبر من صفر")
+        return value
+    
+    def validate_status(self, value):
+        """Validate payment status"""
+        valid_statuses = ['pending', 'processing', 'completed', 'failed', 'cancelled', 'refunded']
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"الحالة يجب أن تكون واحدة من: {', '.join(valid_statuses)}")
+        return value
+    
+    def validate_method(self, value):
+        """Validate payment method"""
+        valid_methods = ['cod', 'card', 'transfer', 'ccp', 'edahabia', 'cib', 'wallet']
+        if value not in valid_methods:
+            raise serializers.ValidationError(f"طريقة الدفع يجب أن تكون واحدة من: {', '.join(valid_methods)}")
+        return value
+    
+    def validate(self, data):
+        """Cross-field validation"""
+        # If payment is completed, transaction_id should be present for non-COD payments
+        if data.get('status') == 'completed' and data.get('method') != 'cod':
+            if not data.get('transaction_id'):
+                raise serializers.ValidationError(
+                    "معرف المعاملة مطلوب للمدفوعات المكتملة غير النقدية"
+                )
+        
+        # Validate amount against order total if order is provided
+        order = data.get('order') or (self.instance and self.instance.order)
+        if order and 'amount' in data:
+            if data['amount'] > order.total_amount:
+                raise serializers.ValidationError(
+                    f"المبلغ لا يمكن أن يتجاوز إجمالي الطلب ({order.total_amount})"
+                )
+        
+        return data
+    
+    def create(self, validated_data):
+        """Create payment with additional validation"""
+        order = validated_data['order']
+        
+        # Check if payment already exists for this order (excluding COD)
+        if validated_data.get('method') != 'cod':
+            existing_payment = Payment.objects.filter(
+                order=order,
+                method=validated_data.get('method'),
+                status__in=['pending', 'processing', 'completed']
+            ).first()
+            
+            if existing_payment:
+                raise serializers.ValidationError(
+                    f"يوجد دفع بالفعل لهذا الطلب باستخدام {validated_data.get('method')}"
+                )
+        
+        # Set default amount if not provided
+        if 'amount' not in validated_data:
+            validated_data['amount'] = order.total_amount
+        
+        return super().create(validated_data)
 
 
 class OrderSerializer(serializers.ModelSerializer):

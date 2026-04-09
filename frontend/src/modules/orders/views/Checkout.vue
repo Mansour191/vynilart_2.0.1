@@ -248,6 +248,7 @@ import { useRouter } from 'vue-router';
 import { useMutation, useQuery } from '@vue/apollo-composable';
 import { CREATE_ORDER_MUTATION, SHIPPING_QUERY } from '@/integration/graphql/orders.graphql';
 import { useStore } from 'vuex';
+import PaymentService from '@/shared/integration/services/PaymentService';
 
 const router = useRouter();
 const store = useStore();
@@ -377,17 +378,61 @@ const placeOrder = async () => {
     });
     
     if (result.data?.createOrder?.success) {
-      createdOrder.value = result.data.createOrder.order;
-      orderCreated.value = true;
+      const order = result.data.createOrder.order;
+      createdOrder.value = order;
       
-      // Clear cart
-      store.dispatch('cart/clearCart');
-      
-      // Show success notification
-      store.dispatch('notifications/showNotification', {
-        type: 'success',
-        message: 'تم إنشاء طلبك بنجاح!'
-      });
+      // Process payment based on payment method
+      if (orderData.value.paymentMethod === 'cod') {
+        // Record cash on delivery payment
+        await PaymentService.processCashOnDelivery({
+          id: order.id,
+          total: order.totalAmount,
+          paymentMethod: 'cod'
+        });
+        
+        orderCreated.value = true;
+        
+        // Clear cart
+        store.dispatch('cart/clearCart');
+        
+        // Show success notification
+        store.dispatch('notifications/showNotification', {
+          type: 'success',
+          message: 'تم إنشاء طلبك بنجاح! الدفع عند الاستلام.'
+        });
+      } else {
+        // Process online payment
+        try {
+          const paymentResult = await PaymentService.processCardPayment({
+            id: order.id,
+            total: order.totalAmount,
+            paymentMethod: orderData.value.paymentMethod,
+            email: orderData.value.email
+          });
+          
+          if (paymentResult.success) {
+            // In real implementation, redirect to payment gateway
+            // For now, show success
+            orderCreated.value = true;
+            
+            // Clear cart
+            store.dispatch('cart/clearCart');
+            
+            store.dispatch('notifications/showNotification', {
+              type: 'success',
+              message: 'تم توجيهك إلى بوابة الدفع بنجاح!'
+            });
+          }
+        } catch (paymentError) {
+          console.error('Payment processing error:', paymentError);
+          error.value = paymentError.message || 'فشل معالجة الدفع';
+          
+          store.dispatch('notifications/showNotification', {
+            type: 'error',
+            message: 'فشل معالجة الدفع، يرجى المحاولة مرة أخرى'
+          });
+        }
+      }
     } else {
       throw new Error(result.data?.createOrder?.message || 'فشل إنشاء الطلب');
     }

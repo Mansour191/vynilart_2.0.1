@@ -7,45 +7,55 @@ from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 from django.db.models import Count, Avg, Sum
 from decimal import Decimal
+from graphene import Mutation as BaseMutation
+
+
+class BehaviorTrackingType(DjangoObjectType):
+    """Behavior tracking type"""
+    id = graphene.ID(required=True)
+    user = Field(lambda: UserType)
+    session_id = String()
+    ip_address = String()
+    action = String()
+    target_type = String()
+    target_id = Int()
+    duration = Int()
+    metadata = JSONString()
+    created_at = DateTime()
+
+    class Meta:
+        model = BehaviorTracking
+        interfaces = (relay.Node,)
+        fields = '__all__'
+        filter_fields = {
+            'user': ['exact'],
+            'session_id': ['exact'],
+            'action': ['exact'],
+            'target_type': ['exact'],
+            'created_at': ['exact', 'lt', 'lte', 'gt', 'gte'],
+        }
 
 
 class ForecastType(DjangoObjectType):
     """Forecast type"""
     id = graphene.ID(required=True)
     product = Field(lambda: ProductType)
-    category = Field(lambda: CategoryType)
     
     # Forecast specifications
     forecast_type = String()
     period = String()
-    model_used = String()
-    
-    # Time range
-    start_date = graphene.Date()
-    end_date = graphene.Date()
-    forecast_date = graphene.Date()
     
     # Forecast values
-    predicted_value = Float()
-    confidence_interval_lower = Float()
-    confidence_interval_upper = Float()
+    predicted_demand = Int()
+    actual_demand = Int()
+    error_margin = Float()
+    algorithm_used = String()
     confidence = Float()
-    
-    # Accuracy metrics
-    actual_value = Float()
-    mae = Float()
-    mape = Float()
     
     # Computed fields
     accuracy_percentage = Float()
     
-    # Metadata
-    model_parameters = JSONString()
-    training_data_points = Int()
-    seasonal_adjustment = Boolean()
-    
     created_at = DateTime()
-    updated_at = DateTime()
 
     class Meta:
         model = Forecast
@@ -53,20 +63,17 @@ class ForecastType(DjangoObjectType):
         fields = '__all__'
         filter_fields = {
             'product': ['exact'],
-            'category': ['exact'],
             'forecast_type': ['exact'],
             'period': ['exact'],
-            'model_used': ['exact'],
-            'start_date': ['exact', 'lt', 'lte', 'gt', 'gte'],
-            'end_date': ['exact', 'lt', 'lte', 'gt', 'gte'],
+            'algorithm_used': ['exact'],
             'created_at': ['exact', 'lt', 'lte', 'gt', 'gte'],
         }
 
     def resolve_accuracy_percentage(self, info):
-        """Calculate accuracy percentage if actual value exists"""
-        if self.actual_value is None or self.predicted_value == 0:
+        """Calculate accuracy percentage if actual demand exists"""
+        if self.actual_demand is None or self.predicted_demand == 0:
             return None
-        return max(0, 100 - abs((self.actual_value - self.predicted_value) / self.predicted_value * 100))
+        return max(0, 100 - abs((self.actual_demand - self.predicted_demand) / self.predicted_demand * 100))
 
 
 class CustomerSegmentType(DjangoObjectType):
@@ -211,29 +218,26 @@ class DashboardSettingsType(DjangoObjectType):
 
 
 # Input Types
+class BehaviorTrackingInput(graphene.InputObjectType):
+    """Input for behavior tracking"""
+    action = String(required=True)
+    target_type = String()
+    target_id = Int()
+    session_id = String()
+    duration = Int()
+    metadata = JSONString()
+
+
 class ForecastInput(graphene.InputObjectType):
     """Input for forecast creation and updates"""
     product_id = ID()
-    category_id = ID()
     forecast_type = String(required=True)
     period = String(required=True)
-    model_used = String(required=True)
-    
-    # Time range
-    start_date = graphene.Date(required=True)
-    end_date = graphene.Date(required=True)
-    forecast_date = graphene.Date(required=True)
-    
-    # Forecast values
-    predicted_value = Float(required=True)
-    confidence_interval_lower = Float()
-    confidence_interval_upper = Float()
+    predicted_demand = Int()
+    actual_demand = Int()
+    error_margin = Float()
+    algorithm_used = String()
     confidence = Float()
-    
-    # Metadata
-    model_parameters = JSONString()
-    training_data_points = Int()
-    seasonal_adjustment = Boolean(default_value=False)
 
 
 class CustomerSegmentInput(graphene.InputObjectType):
@@ -323,6 +327,66 @@ class DashboardSettingsInput(graphene.InputObjectType):
     public_dashboard = Boolean()
 
 
+class TrackUserAction(BaseMutation):
+    """Track user behavior action"""
+    
+    class Arguments:
+        input = BehaviorTrackingInput(required=True)
+
+    success = Boolean()
+    message = String()
+    tracking = Field(BehaviorTrackingType)
+    errors = List(String)
+
+    def mutate(self, info, input):
+        try:
+            from api.models.analytics_new import BehaviorTracking
+            from django.contrib.auth.models import AnonymousUser
+            import uuid
+            
+            user = info.context.user
+            
+            # Get client IP address
+            ip_address = None
+            x_forwarded_for = info.context.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(',')[0].strip()
+            else:
+                ip_address = info.context.META.get('REMOTE_ADDR')
+            
+            # Generate session ID if not provided and user is anonymous
+            session_id = input.get('session_id')
+            if not session_id and isinstance(user, AnonymousUser):
+                session_id = str(uuid.uuid4())
+            
+            # Create tracking record
+            tracking_data = {
+                'user': user if user.is_authenticated else None,
+                'session_id': session_id,
+                'ip_address': ip_address,
+                'action': input['action'],
+                'target_type': input.get('target_type'),
+                'target_id': input.get('target_id'),
+                'duration': input.get('duration', 0),
+                'metadata': input.get('metadata', {})
+            }
+            
+            tracking = BehaviorTracking.objects.create(**tracking_data)
+            
+            return TrackUserAction(
+                success=True,
+                message="Action tracked successfully",
+                tracking=tracking
+            )
+            
+        except Exception as e:
+            return TrackUserAction(
+                success=False,
+                message=str(e),
+                errors=[str(e)]
+            )
+
+
 # Mutations
 class CreateForecast(Mutation):
     """Create a new forecast"""
@@ -337,8 +401,8 @@ class CreateForecast(Mutation):
 
     def mutate(self, info, input):
         try:
-            from api.models.analytics import Forecast
-            from api.models.product import Product, Category
+            from api.models.analytics_new import Forecast
+            from api.models.product import Product
             
             user = info.context.user
             
@@ -349,19 +413,14 @@ class CreateForecast(Mutation):
                     errors=["Admin authentication required"]
                 )
             
-            # Handle product and category
+            # Handle product
             product = None
             if 'product_id' in input:
                 product = Product.objects.get(id=input['product_id'])
             
-            category = None
-            if 'category_id' in input:
-                category = Category.objects.get(id=input['category_id'])
-            
             forecast = Forecast.objects.create(
                 product=product,
-                category=category,
-                **{k: v for k, v in input.items() if k not in ['product_id', 'category_id']}
+                **{k: v for k, v in input.items() if k != 'product_id'}
             )
             
             return CreateForecast(
@@ -392,8 +451,8 @@ class UpdateForecast(Mutation):
 
     def mutate(self, info, id, input):
         try:
-            from api.models.analytics import Forecast
-            from api.models.product import Product, Category
+            from api.models.analytics_new import Forecast
+            from api.models.product import Product
             
             user = info.context.user
             
@@ -406,16 +465,13 @@ class UpdateForecast(Mutation):
             
             forecast = Forecast.objects.get(id=id)
             
-            # Handle product and category
+            # Handle product
             if 'product_id' in input:
                 forecast.product = Product.objects.get(id=input['product_id'])
             
-            if 'category_id' in input:
-                forecast.category = Category.objects.get(id=input['category_id'])
-            
             # Update fields
             for field, value in input.items():
-                if field not in ['product_id', 'category_id'] and hasattr(forecast, field):
+                if field != 'product_id' and hasattr(forecast, field):
                     setattr(forecast, field, value)
             
             forecast.save()
@@ -539,6 +595,9 @@ class UpdateDashboardSettings(Mutation):
 class AnalyticsQuery(ObjectType):
     """Analytics queries"""
     
+    # Behavior tracking queries
+    behavior_tracking = List(BehaviorTrackingType, user_id=ID(), session_id=String(), action=String())
+    
     # Forecast queries
     forecasts = List(ForecastType)
     forecast = Field(ForecastType, id=ID(required=True))
@@ -554,10 +613,27 @@ class AnalyticsQuery(ObjectType):
     # Dashboard settings queries
     my_dashboard_settings = Field(DashboardSettingsType)
     
+    def resolve_behavior_tracking(self, info, user_id=None, session_id=None, action=None):
+        """Get behavior tracking records"""
+        user = info.context.user
+        if not user.is_authenticated or not user.is_staff:
+            return []
+        
+        queryset = BehaviorTracking.objects.all()
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        if session_id:
+            queryset = queryset.filter(session_id=session_id)
+        if action:
+            queryset = queryset.filter(action=action)
+        
+        return queryset.order_by('-created_at')[:100]  # Limit to last 100 records
+    
     def resolve_forecasts(self, info):
         """Get all forecasts (admin only)"""
         user = info.context.user
         if user.is_authenticated and user.is_staff:
+            from api.models.analytics_new import Forecast
             return Forecast.objects.all()
         return []
     
@@ -565,6 +641,7 @@ class AnalyticsQuery(ObjectType):
         """Get forecast by ID"""
         user = info.context.user
         try:
+            from api.models.analytics_new import Forecast
             forecast = Forecast.objects.get(id=id)
             if user.is_authenticated and user.is_staff:
                 return forecast
@@ -576,6 +653,7 @@ class AnalyticsQuery(ObjectType):
         """Get forecasts for specific product"""
         user = info.context.user
         if user.is_authenticated and user.is_staff:
+            from api.models.analytics_new import Forecast
             return Forecast.objects.filter(product_id=product_id)
         return []
     
@@ -622,6 +700,7 @@ class AnalyticsQuery(ObjectType):
 class AnalyticsMutation(ObjectType):
     """Analytics mutations"""
     
+    track_user_action = TrackUserAction.Field()
     create_forecast = CreateForecast.Field()
     update_forecast = UpdateForecast.Field()
     create_customer_segment = CreateCustomerSegment.Field()

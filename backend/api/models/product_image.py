@@ -9,15 +9,15 @@ from django.conf import settings
 from PIL import Image as PILImage
 
 
-class ProductImage(models.Model):
+class ProductImageEnhanced(models.Model):
     """
-    Enhanced Product images matching api_productimage table
+    Enhanced Product images with additional features
     """
     id = models.AutoField(primary_key=True)
     product = models.ForeignKey(
         'api.Product', 
         on_delete=models.CASCADE, 
-        related_name='images',
+        related_name='enhanced_images',
         db_column='product_id'
     )
     

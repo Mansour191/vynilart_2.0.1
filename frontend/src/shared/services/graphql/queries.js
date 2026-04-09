@@ -47,6 +47,21 @@ export const MARKET_TRENDS = gql`
   }
 `;
 
+// ERPNext Sync Logs Query
+export const GET_SYNC_LOGS = gql`
+  query GetSyncLogs($limit: Int, $status: String) {
+    syncLogs(limit: $limit, status: $status) {
+      id
+      action
+      status
+      message
+      recordsSynced
+      errorMessage
+      timestamp
+    }
+  }
+`;
+
 export const DEMAND_FORECAST = gql`
   query DemandForecast($productId: String!, $period: String) {
     demandForecast(productId: $productId, period: $period) {
@@ -226,6 +241,49 @@ export const GET_SHIPPING_OPTIONS = gql`
       nameFr
       stopDeskPrice
       homeDeliveryPrice
+    }
+  }
+`;
+
+// Forecast Queries
+export const GET_PRODUCT_FORECASTS = gql`
+  query GetProductForecasts($productId: ID!) {
+    productForecasts(productId: $productId) {
+      id
+      product {
+        id
+        nameAr
+        nameEn
+      }
+      forecastType
+      period
+      predictedDemand
+      actualDemand
+      errorMargin
+      algorithmUsed
+      confidence
+      createdAt
+    }
+  }
+`;
+
+export const GET_ALL_FORECASTS = gql`
+  query GetAllForecasts {
+    forecasts {
+      id
+      product {
+        id
+        nameAr
+        nameEn
+      }
+      forecastType
+      period
+      predictedDemand
+      actualDemand
+      errorMargin
+      algorithmUsed
+      confidence
+      createdAt
     }
   }
 `;

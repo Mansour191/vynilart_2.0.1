@@ -191,6 +191,53 @@
         </div>
       </div>
     </v-card-text>
+    
+    <!-- Report Review Dialog -->
+    <v-dialog v-model="reportDialog" max-width="500" persistent>
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon color="error" class="me-2">mdi-flag</v-icon>
+          {{ t('reportReview') || 'إبلاغ عن مراجعة' }}
+        </v-card-title>
+        
+        <v-card-text>
+          <v-form ref="reportForm" @submit.prevent="submitReport">
+            <v-select
+              v-model="reportReason"
+              :items="reportReasons"
+              :label="t('selectReportReason') || 'اختر سبب الإبلاغ'"
+              item-title="text"
+              item-value="value"
+              variant="outlined"
+              :rules="[
+                v => !!v || (t('reportReasonRequired') || 'يجب اختيار سبب للإبلاغ')
+              ]"
+              required
+            ></v-select>
+          </v-form>
+        </v-card-text>
+        
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn
+            @click="reportDialog = false"
+            :disabled="reportSubmitting"
+            variant="text"
+          >
+            {{ t('cancel') || 'إلغاء' }}
+          </v-btn>
+          <v-btn
+            @click="submitReport"
+            :loading="reportSubmitting"
+            color="error"
+            variant="elevated"
+            prepend-icon="mdi-flag"
+          >
+            {{ t('submitReport') || 'إرسال البلاغ' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-card>
 </template>
 
@@ -272,31 +319,62 @@ const submitReview = async () => {
   }
 };
 
+// Report dialog state
+const reportDialog = ref(false);
+const selectedReviewId = ref(null);
+const reportReason = ref('');
+const reportSubmitting = ref(false);
+const reportForm = ref();
+
+// Predefined report reasons
+const reportReasons = [
+  { value: 'inappropriate_content', text: 'محتوى غير لائق' },
+  { value: 'spam', text: 'رسائل مزعجة أو إعلانات' },
+  { value: 'fake_review', text: 'مراجعة مزيفة' },
+  { value: 'offensive_language', text: 'لغة مسيئة' },
+  { value: 'irrelevant', text: 'محتوى غير متعلق بالمنتج' },
+  { value: 'discrimination', text: 'تمييز أو تحريض' },
+  { value: 'other', text: 'سبب آخر' }
+];
+
 const reportReview = (reviewId) => {
-  // Create a dialog for reporting reason
-  const reason = prompt(t('reportReason') || 'يرجى كتابة سبب الإبلاغ:');
-  if (reason && reason.trim()) {
-    store.dispatch('reviews/reportReview', {
+  selectedReviewId.value = reviewId;
+  reportDialog.value = true;
+};
+
+const submitReport = async () => {
+  const { valid } = await reportForm.value.validate();
+  if (!valid) return;
+
+  reportSubmitting.value = true;
+  try {
+    await store.dispatch('reviews/reportReview', {
       productId: props.productId,
-      reviewId,
-      reason: reason.trim()
-    }).then(() => {
-      store.dispatch('notifications/add', {
-        type: 'success',
-        title: t('reviewReported') || 'تم الإبلاغ',
-        message: t('reviewReportedMessage') || 'شكراً لإبلاغك، سيقوم الفريق بمراجعة البلاغ',
-        icon: 'mdi-flag',
-        timeout: 3000
-      });
-    }).catch(error => {
-      store.dispatch('notifications/add', {
-        type: 'error',
-        title: t('error') || 'خطأ',
-        message: error.message || t('reportError') || 'فشل في إرسال البلاغ',
-        icon: 'mdi-alert-circle',
-        timeout: 3000
-      });
+      reviewId: selectedReviewId.value,
+      reason: reportReason.value
     });
+    
+    reportDialog.value = false;
+    reportReason.value = '';
+    selectedReviewId.value = null;
+    
+    store.dispatch('notifications/add', {
+      type: 'success',
+      title: t('reviewReported') || 'تم الإبلاغ',
+      message: t('reviewReportedMessage') || 'شكراً لإبلاغك، سيقوم الفريق بمراجعة البلاغ',
+      icon: 'mdi-flag',
+      timeout: 3000
+    });
+  } catch (error) {
+    store.dispatch('notifications/add', {
+      type: 'error',
+      title: t('error') || 'خطأ',
+      message: error.message || t('reportError') || 'فشل في إرسال البلاغ',
+      icon: 'mdi-alert-circle',
+      timeout: 3000
+    });
+  } finally {
+    reportSubmitting.value = false;
   }
 };
 

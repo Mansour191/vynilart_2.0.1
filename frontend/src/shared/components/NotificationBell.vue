@@ -84,19 +84,19 @@
         <v-list density="compact">
           <template v-if="filteredNotifications.length > 0">
             <v-list-item
-              v-for="notification in filteredNotifications.slice(0, 10)"
+              v-for="notification in paginatedNotifications"
               :key="notification.id"
               :class="{ 
-                'unread': !notification.is_read,
-                'priority-high': notification.priority === 'high',
-                'priority-critical': notification.priority === 'critical'
+                'unread': !notification.isRead,
+                'priority-high': getPriority(notification.dataJson) === 'high',
+                'priority-critical': getPriority(notification.dataJson) === 'critical'
               }"
               @click="handleNotificationClick(notification)"
               class="notification-item"
             >
               <template v-slot:prepend>
                 <v-avatar
-                  :color="getNotificationColor(notification.category)"
+                  :color="getNotificationColor(notification.type)"
                   size="32"
                   class="me-3"
                 >
@@ -115,15 +115,15 @@
                 </v-list-item-subtitle>
                 <div class="d-flex align-center mt-1">
                   <v-chip
-                    :color="getPriorityColor(notification.priority)"
+                    :color="getPriorityColor(getPriority(notification.dataJson))"
                     size="x-small"
                     variant="flat"
                     class="me-1"
                   >
-                    {{ getPriorityLabel(notification.priority) }}
+                    {{ getPriorityLabel(getPriority(notification.dataJson)) }}
                   </v-chip>
                   <span class="text-caption text-medium-emphasis">
-                    {{ formatTime(notification.created_at) }}
+                    {{ formatTime(notification.createdAt) }}
                   </span>
                 </div>
               </v-list-item-content>
@@ -131,7 +131,7 @@
               <template v-slot:append>
                 <div class="d-flex flex-column align-end">
                   <v-btn
-                    v-if="!notification.is_read"
+                    v-if="!notification.isRead"
                     icon="mdi-circle"
                     size="x-small"
                     color="primary"
@@ -189,35 +189,128 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useNotificationsStore, NOTIFICATION_CATEGORIES, NOTIFICATION_PRIORITIES } from '@/stores/notifications'
+import { useQuery, useMutation } from '@vue/apollo-composable'
+import gql from 'graphql-tag'
 
 const router = useRouter()
-const notificationsStore = useNotificationsStore()
+
+// GraphQL Queries
+const GET_UNREAD_NOTIFICATIONS = gql`
+  query GetUnreadNotifications {
+    unreadNotifications {
+      id
+      title
+      message
+      type
+      isRead
+      dataJson
+      createdAt
+    }
+  }
+`
+
+const GET_UNREAD_COUNT = gql`
+  query GetUnreadCount {
+    unreadCount
+  }
+`
+
+const MARK_NOTIFICATION_AS_READ = gql`
+  mutation MarkNotificationAsRead($id: ID, $markAll: Boolean) {
+    markNotificationAsRead(id: $id, markAll: $markAll) {
+      success
+      unreadCount
+    }
+  }
+`
+
+const DELETE_NOTIFICATION = gql`
+  mutation DeleteNotification($id: ID!) {
+    deleteNotification(id: $id) {
+      success
+      unreadCount
+    }
+  }
+`
 
 // Reactive state
 const menu = ref(false)
 const isMarkingAllRead = ref(false)
+const filters = ref({ category: null })
+const page = ref(1)
+const itemsPerPage = 10
 
-// Computed properties from store
-const notifications = computed(() => notificationsStore.notifications)
-const unreadCount = computed(() => notificationsStore.unreadCount)
-const isLoading = computed(() => notificationsStore.isLoading)
-const filteredNotifications = computed(() => notificationsStore.filteredNotifications)
-const filters = computed(() => notificationsStore.filters)
+// GraphQL queries
+const {
+  result: notificationsResult,
+  loading: notificationsLoading,
+  error: notificationsError,
+  refetch: refetchNotifications
+} = useQuery(GET_UNREAD_NOTIFICATIONS, null, {
+  pollInterval: 30000, // Refresh every 30 seconds
+  errorPolicy: 'all'
+})
+
+const {
+  result: countResult,
+  loading: countLoading,
+  refetch: refetchCount
+} = useQuery(GET_UNREAD_COUNT, null, {
+  pollInterval: 30000, // Refresh every 30 seconds
+  errorPolicy: 'all'
+})
+
+// Mutations
+const { mutate: markAsRead } = useMutation(MARK_NOTIFICATION_AS_READ, {
+  update: (cache, { data: { markNotificationAsRead } }) => {
+    if (markNotificationAsRead.success) {
+      refetchCount()
+    }
+  }
+})
+
+const { mutate: deleteNotificationMutate } = useMutation(DELETE_NOTIFICATION, {
+  update: (cache, { data: { deleteNotification } }) => {
+    if (deleteNotification.success) {
+      refetchCount()
+      refetchNotifications()
+    }
+  }
+})
+
+// Computed properties
+const notifications = computed(() => notificationsResult.value?.unreadNotifications || [])
+const unreadCount = computed(() => countResult.value?.unreadCount || 0)
+const loading = computed(() => notificationsLoading.value || countLoading.value)
+
+const filteredNotifications = computed(() => {
+  let filtered = notifications.value
+  
+  if (filters.value.category) {
+    filtered = filtered.filter(n => n.type === filters.value.category)
+  }
+  
+  return filtered
+})
+
+const paginatedNotifications = computed(() => {
+  const start = (page.value - 1) * itemsPerPage
+  const end = start + itemsPerPage
+  return filteredNotifications.value.slice(start, end)
+})
 
 // Category filters
 const categoryFilters = ref([
-  { value: null, label: 'الكل', icon: 'mdi-dots-horizontal' },
-  { value: NOTIFICATION_CATEGORIES.ORDER, label: 'الطلبات', icon: 'mdi-shopping' },
-  { value: NOTIFICATION_CATEGORIES.FINANCE, label: 'المالية', icon: 'mdi-cash' },
-  { value: NOTIFICATION_CATEGORIES.SECURITY, label: 'الأمان', icon: 'mdi-shield-account' },
-  { value: NOTIFICATION_CATEGORIES.MARKETING, label: 'التسويق', icon: 'mdi-bullhorn' },
+  { value: null, label: 'All', icon: 'mdi-dots-horizontal' },
+  { value: 'info', label: 'Info', icon: 'mdi-information' },
+  { value: 'success', label: 'Success', icon: 'mdi-check-circle' },
+  { value: 'warning', label: 'Warning', icon: 'mdi-alert' },
+  { value: 'error', label: 'Error', icon: 'mdi-error' },
 ])
 
 // Methods
 const getNotificationIcon = (type) => {
   const icons = {
-    // Finance
     'payment_success': 'mdi-credit-card-check',
     'payment_failed': 'mdi-credit-card-remove',
     'refund_processed': 'mdi-cash-refund',
@@ -225,7 +318,6 @@ const getNotificationIcon = (type) => {
     'coupon_applied': 'mdi-ticket-percent',
     'coupon_expired': 'mdi-clock-alert',
     
-    // Orders
     'order_created': 'mdi-shopping-plus',
     'order_confirmed': 'mdi-check-circle',
     'order_cancelled': 'mdi-cancel',
@@ -234,80 +326,106 @@ const getNotificationIcon = (type) => {
     'order_returned': 'mdi-package-variant-closed',
     'order_modified': 'mdi-pencil',
     
-    // Inventory
     'stock_low': 'mdi-alert',
     'stock_out': 'mdi-alert-octagon',
     'product_added': 'mdi-package-variant-plus',
     'product_updated': 'mdi-package-variant-closed',
     
-    // Security
     'login_new_device': 'mdi-devices',
     'password_changed': 'mdi-lock-reset',
     'login_failed': 'mdi-lock-alert',
     'account_locked': 'mdi-account-lock',
     
-    // Logistics
     'shipping_confirmed': 'mdi-truck-check',
     'shipping_delayed': 'mdi-truck-alert',
     'delivery_failed': 'mdi-truck-remove',
     'package_received': 'mdi-warehouse',
     
-    // System
     'system_maintenance': 'mdi-wrench',
     'system_update': 'mdi-update',
     'database_backup': 'mdi-database',
     
-    // Marketing
     'promotion_launched': 'mdi-megaphone',
     'newsletter_sent': 'mdi-email-newsletter',
     'campaign_completed': 'mdi-chart-line',
     
-    // Customer Service
     'support_ticket_created': 'mdi-headset',
     'support_ticket_resolved': 'mdi-check-all',
     'feedback_received': 'mdi-comment-quote',
+    
+    'info': 'mdi-information',
+    'success': 'mdi-check-circle',
+    'warning': 'mdi-alert',
+    'error': 'mdi-error'
   }
   return icons[type] || 'mdi-bell'
 }
 
-const getNotificationColor = (category) => {
+const getNotificationColor = (type) => {
   const colors = {
-    [NOTIFICATION_CATEGORIES.FINANCE]: 'success',
-    [NOTIFICATION_CATEGORIES.INVENTORY]: 'warning',
-    [NOTIFICATION_CATEGORIES.ORDER]: 'info',
-    [NOTIFICATION_CATEGORIES.SECURITY]: 'error',
-    [NOTIFICATION_CATEGORIES.MARKETING]: 'purple',
-    [NOTIFICATION_CATEGORIES.SYSTEM]: 'grey',
-    [NOTIFICATION_CATEGORIES.LOGISTICS]: 'teal',
-    [NOTIFICATION_CATEGORIES.CUSTOMER_SERVICE]: 'indigo',
+    'payment_success': 'success',
+    'order_confirmed': 'success',
+    'order_delivered': 'success',
+    'coupon_applied': 'success',
+    'support_ticket_resolved': 'success',
+    'success': 'success',
+    
+    'payment_failed': 'error',
+    'order_cancelled': 'error',
+    'login_failed': 'error',
+    'account_locked': 'error',
+    'stock_out': 'error',
+    'error': 'error',
+    
+    'stock_low': 'warning',
+    'coupon_expired': 'warning',
+    'login_new_device': 'warning',
+    'warning': 'warning',
+    
+    'order_created': 'info',
+    'order_shipped': 'info',
+    'product_added': 'info',
+    'system_maintenance': 'info',
+    'system_update': 'info',
+    'promotion_launched': 'info',
+    'newsletter_sent': 'info',
+    'support_ticket_created': 'info',
+    'feedback_received': 'info',
+    'info': 'info'
   }
-  return colors[category] || 'primary'
+  return colors[type] || 'primary'
+}
+
+const getPriority = (data) => {
+  if (!data || typeof data !== 'object') return 'medium'
+  return data.priority || 'medium'
 }
 
 const getPriorityColor = (priority) => {
   const colors = {
-    [NOTIFICATION_PRIORITIES.LOW]: 'grey',
-    [NOTIFICATION_PRIORITIES.MEDIUM]: 'blue',
-    [NOTIFICATION_PRIORITIES.HIGH]: 'orange',
-    [NOTIFICATION_PRIORITIES.CRITICAL]: 'red',
+    'low': 'grey',
+    'medium': 'blue',
+    'high': 'orange',
+    'critical': 'red',
   }
   return colors[priority] || 'grey'
 }
 
 const getPriorityLabel = (priority) => {
   const labels = {
-    [NOTIFICATION_PRIORITIES.LOW]: 'منخفض',
-    [NOTIFICATION_PRIORITIES.MEDIUM]: 'متوسط',
-    [NOTIFICATION_PRIORITIES.HIGH]: 'عالي',
-    [NOTIFICATION_PRIORITIES.CRITICAL]: 'حرج',
+    'low': 'Low',
+    'medium': 'Medium',
+    'high': 'High',
+    'critical': 'Critical',
   }
-  return labels[priority] || 'متوسط'
+  return labels[priority] || 'Medium'
 }
 
 const getBadgeColor = () => {
   if (unreadCount.value > 10) return 'error'
   if (unreadCount.value > 5) return 'warning'
-  return 'primary'
+  if (unreadCount.value > 0) return 'primary'
+  return 'default'
 }
 
 const formatTime = (timestamp) => {
@@ -318,43 +436,99 @@ const formatTime = (timestamp) => {
   const diffHours = Math.floor(diffMs / 3600000)
   const diffDays = Math.floor(diffMs / 86400000)
 
-  if (diffMins < 1) return 'الآن'
-  if (diffMins < 60) return `منذ ${diffMins} دقيقة`
-  if (diffHours < 24) return `منذ ${diffHours} ساعة`
-  if (diffDays < 7) return `منذ ${diffDays} يوم`
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins} min ago`
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
   
-  return date.toLocaleDateString('ar-DZ')
+  return date.toLocaleDateString()
 }
 
 const handleNotificationClick = async (notification) => {
-  // Mark as read
-  if (!notification.is_read) {
-    await notificationsStore.markAsRead(notification.id)
-  }
+  try {
+    // Mark as read
+    if (!notification.isRead) {
+      await markAsRead({ id: notification.id, markAll: false })
+    }
 
-  // Navigate to action URL if available
-  if (notification.action_url) {
-    window.location.href = notification.action_url
-  }
+    // Extract link from data JSON field and navigate
+    if (notification.dataJson && typeof notification.dataJson === 'object') {
+      const link = notification.dataJson.link || notification.dataJson.url || notification.dataJson.route
+      
+      if (link) {
+        // Close dropdown first
+        menu.value = false
+        
+        // Navigate using vue-router
+        if (typeof link === 'string') {
+          // Check if it's a relative path (internal route) or absolute URL
+          if (link.startsWith('/')) {
+            await router.push(link)
+          } else if (link.startsWith('http')) {
+            // External link - open in new tab
+            window.open(link, '_blank')
+          } else {
+            // Treat as relative path
+            await router.push('/' + link)
+          }
+        }
+        
+        return
+      }
+      
+      // Handle special navigation cases from data
+      if (notification.dataJson.orderId) {
+        await router.push(`/orders/${notification.dataJson.orderId}`)
+        return
+      }
+      
+      if (notification.dataJson.productId) {
+        await router.push(`/products/${notification.dataJson.productId}`)
+        return
+      }
+      
+      if (notification.dataJson.userId) {
+        await router.push(`/users/${notification.dataJson.userId}`)
+        return
+      }
+    }
 
-  menu.value = false
+    // Default action - close dropdown
+    menu.value = false
+  } catch (error) {
+    console.error('Error handling notification click:', error)
+    // Still close the dropdown even if there's an error
+    menu.value = false
+  }
 }
 
 const markAllAsRead = async () => {
   isMarkingAllRead.value = true
   try {
-    await notificationsStore.markAllAsRead()
+    await markAsRead({ markAll: true })
+    refetchNotifications()
+  } catch (error) {
+    console.error('Error marking all as read:', error)
   } finally {
     isMarkingAllRead.value = false
   }
 }
 
 const deleteNotification = async (notificationId) => {
-  await notificationsStore.deleteNotification(notificationId)
+  try {
+    await deleteNotificationMutate({ id: notificationId })
+  } catch (error) {
+    console.error('Error deleting notification:', error)
+  }
 }
 
 const refreshNotifications = async () => {
-  await notificationsStore.fetchNotifications(true)
+  try {
+    await refetchNotifications()
+    await refetchCount()
+  } catch (error) {
+    console.error('Error refreshing notifications:', error)
+  }
 }
 
 const viewAllNotifications = () => {
@@ -363,22 +537,18 @@ const viewAllNotifications = () => {
 }
 
 const toggleCategoryFilter = (category) => {
-  const newCategory = filters.value.category === category ? null : category
-  notificationsStore.setFilters({ category: newCategory })
+  filters.value.category = filters.value.category === category ? null : category
+  page.value = 1 // Reset to first page when filter changes
 }
 
 // Lifecycle
 onMounted(() => {
-  // Initialize the notifications store
-  notificationsStore.initialize()
-  
   // Listen for custom notification events
   window.addEventListener('notification', handleNewNotification)
 })
 
 onUnmounted(() => {
   window.removeEventListener('notification', handleNewNotification)
-  notificationsStore.cleanup()
 })
 
 const handleNewNotification = (event) => {
@@ -391,9 +561,12 @@ const handleNewNotification = (event) => {
       icon: '/favicon.ico',
       badge: '/favicon.ico',
       tag: notification.id,
-      requireInteraction: notification.priority === 'critical'
+      requireInteraction: getPriority(notification.data) === 'critical'
     })
   }
+  
+  // Refresh notifications
+  refreshNotifications()
 }
 </script>
 

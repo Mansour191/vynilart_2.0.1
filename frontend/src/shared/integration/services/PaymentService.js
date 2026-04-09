@@ -74,6 +74,19 @@ class PaymentService {
       });
 
       if (response.success) {
+        // Record payment in database via GraphQL mutation
+        await this.recordPayment({
+          orderId: orderData.id,
+          amount: orderData.total,
+          method: orderData.paymentMethod,
+          status: 'processing',
+          transactionId: response.transactionId,
+          gatewayResponse: {
+            redirectUrl: response.redirectUrl,
+            initiatedAt: new Date().toISOString()
+          }
+        });
+
         // في التطبيق الحقيقي سنقوم بـ window.location.href = response.redirectUrl;
         // هنا سنحاكي النجاح مباشرة للمستخدم
         console.log('🚀 تحويل المستخدم إلى:', response.redirectUrl);
@@ -82,6 +95,190 @@ class PaymentService {
       throw new Error('فشل في بدء عملية الدفع');
     } catch (error) {
       console.error('❌ خطأ في الدفع:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * تسجيل الدفع في قاعدة البيانات عبر GraphQL
+   * @param {Object} paymentData - بيانات الدفع
+   * @returns {Promise<Object>} - نتيجة التسجيل
+   */
+  async recordPayment(paymentData) {
+    try {
+      const mutation = `
+        mutation CreatePayment($input: PaymentInput!) {
+          createPayment(input: $input) {
+            success
+            message
+            payment {
+              id
+              order {
+                id
+                orderNumber
+              }
+              amount
+              method
+              status
+              transactionId
+              gatewayResponse
+              createdAt
+            }
+            errors
+          }
+        }
+      `;
+
+      const variables = {
+        input: {
+          orderId: paymentData.orderId,
+          amount: paymentData.amount,
+          method: paymentData.method,
+          status: paymentData.status || 'pending',
+          transactionId: paymentData.transactionId,
+          gatewayResponse: paymentData.gatewayResponse || {}
+        }
+      };
+
+      const response = await this._makeGraphQLRequest(mutation, variables);
+      
+      if (response?.createPayment?.success) {
+        console.log('✅ تم تسجيل الدفع بنجاح:', response.createPayment.payment);
+        return response.createPayment;
+      } else {
+        throw new Error(response?.createPayment?.message || 'فشل تسجيل الدفع');
+      }
+    } catch (error) {
+      console.error('❌ خطأ في تسجيل الدفع:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * تحديث حالة الدفع بعد العودة من بوابة الدفع
+   * @param {string} paymentId - معرف الدفع
+   * @param {string} status - الحالة الجديدة
+   * @param {Object} gatewayResponse - استجابة البوابة
+   * @returns {Promise<Object>} - نتيجة التحديث
+   */
+  async updatePaymentStatus(paymentId, status, gatewayResponse = null) {
+    try {
+      const mutation = `
+        mutation UpdatePaymentStatus($paymentId: ID!, $status: String!, $gatewayResponse: JSONString) {
+          updatePaymentStatus(
+            paymentId: $paymentId
+            status: $status
+            gatewayResponse: $gatewayResponse
+          ) {
+            success
+            message
+            payment {
+              id
+              order {
+                id
+                orderNumber
+                paymentStatus
+              }
+              amount
+              method
+              status
+              transactionId
+              gatewayResponse
+              updatedAt
+            }
+            errors
+          }
+        }
+      `;
+
+      const variables = {
+        paymentId,
+        status,
+        gatewayResponse
+      };
+
+      const response = await this._makeGraphQLRequest(mutation, variables);
+      
+      if (response?.updatePaymentStatus?.success) {
+        console.log('✅ تم تحديث حالة الدفع بنجاح:', response.updatePaymentStatus.payment);
+        return response.updatePaymentStatus;
+      } else {
+        throw new Error(response?.updatePaymentStatus?.message || 'فشل تحديث حالة الدفع');
+      }
+    } catch (error) {
+      console.error('❌ خطأ في تحديث حالة الدفع:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * التحقق من الدفع وتحديث الحالة تلقائياً
+   * @param {string} transactionId - معرف المعاملة
+   * @returns {Promise<Object>} - نتيجة التحقق والتحديث
+   */
+  async verifyAndUpdatePayment(transactionId) {
+    try {
+      // التحقق من حالة المعاملة مع بوابة الدفع
+      const verificationResult = await this.verifyPayment(transactionId);
+      
+      if (verificationResult.success && verificationResult.status === 'PAID') {
+        // تحديث حالة الدفع في قاعدة البيانات
+        const updateResult = await this.updatePaymentStatus(
+          null, // سيتم البحث عن طريق transactionId
+          'completed',
+          {
+            verifiedAt: new Date().toISOString(),
+            receiptNumber: verificationResult.receiptNumber,
+            paymentDate: verificationResult.paymentDate
+          }
+        );
+        
+        return {
+          success: true,
+          message: 'تم التحقق من الدفع وتحديث الحالة بنجاح',
+          payment: updateResult.payment
+        };
+      } else {
+        // تحديث الحالة إلى فشل إذا لم يكن مدفوع
+        await this.updatePaymentStatus(
+          null,
+          'failed',
+          {
+            verifiedAt: new Date().toISOString(),
+            verificationResult: verificationResult
+          }
+        );
+        
+        return {
+          success: false,
+          message: 'فشل التحقق من الدفع'
+        };
+      }
+    } catch (error) {
+      console.error('❌ خطأ في التحقق وتحديث الدفع:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * معالجة الدفع عند الاستلام (COD)
+   * @param {Object} orderData - بيانات الطلب
+   * @returns {Promise<Object>} - نتيجة التسجيل
+   */
+  async processCashOnDelivery(orderData) {
+    try {
+      return await this.recordPayment({
+        orderId: orderData.id,
+        amount: orderData.total,
+        method: 'cod',
+        status: 'pending',
+        gatewayResponse: {
+          paymentType: 'cash_on_delivery',
+          notes: 'الدفع عند الاستلام'
+        }
+      });
+    } catch (error) {
+      console.error('❌ خطأ في تسجيل الدفع عند الاستلام:', error);
       throw error;
     }
   }
@@ -376,6 +573,43 @@ class PaymentService {
    */
   clearCache() {
     this.cache.clear();
+  }
+
+  /**
+   * تنفيذ طلب GraphQL
+   * @param {string} query - استعلام GraphQL
+   * @param {Object} variables - متغيرات الاستعلام
+   * @returns {Promise<Object>} - نتيجة الاستعلام
+   */
+  async _makeGraphQLRequest(query, variables = {}) {
+    try {
+      const response = await fetch('/graphql/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this._getAuthToken()}`
+        },
+        body: JSON.stringify({
+          query,
+          variables
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.errors) {
+        throw new Error(result.errors[0].message);
+      }
+      
+      return result.data;
+    } catch (error) {
+      console.error('❌ GraphQL request error:', error);
+      throw error;
+    }
   }
 }
 

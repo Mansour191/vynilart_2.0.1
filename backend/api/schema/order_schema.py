@@ -9,6 +9,15 @@ from django.db.models import Sum, Count, Avg
 from decimal import Decimal
 from api.models.order import Order, OrderItem, OrderTimeline, Payment
 from api.models.shipping import Shipping
+from api.models.coupon import Coupon
+
+
+class CouponType(DjangoObjectType):
+    """Basic coupon type for order schema"""
+    
+    class Meta:
+        model = Coupon
+        fields = ['id', 'code', 'name', 'discount_type', 'discount_value', 'is_active', 'used_count']
 
 
 class OrderType(DjangoObjectType):
@@ -26,6 +35,8 @@ class OrderType(DjangoObjectType):
     shipping_address = String()
     wilaya = Field(lambda: ShippingType)
     wilaya_name = String()
+    shipping_method = Field(lambda: ShippingMethodType)
+    shipping_method_name = String()
     
     # Financial information
     subtotal = Float()
@@ -54,6 +65,7 @@ class OrderType(DjangoObjectType):
     items = List(lambda: OrderItemType)
     payments = List(lambda: PaymentType)
     timeline = List(lambda: OrderTimelineType)
+    coupon = Field(lambda: CouponType)
     
     # Computed fields
     can_cancel = Boolean()
@@ -88,6 +100,10 @@ class OrderType(DjangoObjectType):
     def resolve_wilaya_name(self, info):
         """Get wilaya name"""
         return self.wilaya.name_ar if self.wilaya else None
+
+    def resolve_shipping_method_name(self, info):
+        """Get shipping method name"""
+        return self.shipping_method.name if self.shipping_method else None
 
     def resolve_calculated_total(self, info):
         """Calculate total amount based on subtotal, shipping, tax, and discount"""
@@ -248,10 +264,12 @@ class OrderInput(graphene.InputObjectType):
     email = String()
     shipping_address = String(required=True)
     wilaya_id = ID()
+    shipping_method_id = ID()
     subtotal = Float()
     shipping_cost = Float(default_value=0)
     tax = Float(default_value=0)
     discount_amount = Float(default_value=0)
+    coupon_code = String()
     payment_method = String(default_value='cod')
     notes = String()
     
@@ -303,6 +321,7 @@ class CreateOrder(Mutation):
             from api.models.order import Order, OrderItem
             from api.models.product import Product, Material
             from api.models.shipping import Shipping
+            from api.models.coupon import Coupon
             from django.contrib.auth.models import User
             
             user = info.context.user
@@ -331,16 +350,77 @@ class CreateOrder(Mutation):
                         errors=["Wilaya not found"]
                     )
             
+            # Get shipping method
+            shipping_method = None
+            if input.get('shipping_method_id'):
+                try:
+                    from api.models.shipping import ShippingMethod
+                    shipping_method = ShippingMethod.objects.get(id=input['shipping_method_id'])
+                except ShippingMethod.DoesNotExist:
+                    return CreateOrder(
+                        success=False,
+                        message="Shipping method not found",
+                        errors=["Shipping method not found"]
+                    )
+            
             # Calculate subtotal from items if not provided
             calculated_subtotal = 0
             for item_data in items:
                 calculated_subtotal += item_data['price'] * item_data['quantity']
             
             subtotal = input.get('subtotal') or calculated_subtotal
-            shipping_cost = input.get('shipping_cost', 0)
+            
+            # Calculate shipping cost based on shipping method to prevent tampering
+            if shipping_method:
+                shipping_cost = shipping_method.base_cost
+            else:
+                shipping_cost = input.get('shipping_cost', 0)
+            
             tax = input.get('tax', 0)
             discount_amount = input.get('discount_amount', 0)
+            
+            # Handle coupon validation and discount calculation
+            coupon = None
+            coupon_discount = 0
+            
+            if input.get('coupon_code'):
+                try:
+                    coupon = Coupon.objects.get_coupon_by_code(input['coupon_code'])
+                    if not coupon:
+                        return CreateOrder(
+                            success=False,
+                            message="Invalid coupon code",
+                            errors=["Coupon not found"]
+                        )
+                    
+                    # Validate coupon
+                    is_valid, message = coupon.is_valid(
+                        user=authenticated_user, 
+                        order_value=subtotal
+                    )
+                    
+                    if not is_valid:
+                        return CreateOrder(
+                            success=False,
+                            message=f"Coupon validation failed: {message}",
+                            errors=[message]
+                        )
+                    
+                    # Calculate discount
+                    coupon_discount = coupon.calculate_discount(subtotal)
+                    discount_amount += coupon_discount
+                    
+                except Exception as e:
+                    return CreateOrder(
+                        success=False,
+                        message=f"Coupon processing error: {str(e)}",
+                        errors=[str(e)]
+                    )
+            
             total_amount = subtotal + shipping_cost + tax - discount_amount
+            
+            # Ensure total is not negative
+            total_amount = max(total_amount, 0)
             
             # Create order
             order = Order.objects.create(
@@ -350,6 +430,7 @@ class CreateOrder(Mutation):
                 email=input.get('email'),
                 shipping_address=input.shipping_address,
                 wilaya=wilaya,
+                shipping_method=shipping_method,
                 subtotal=subtotal,
                 shipping_cost=shipping_cost,
                 tax=tax,
@@ -357,6 +438,7 @@ class CreateOrder(Mutation):
                 total_amount=total_amount,
                 payment_method=input.get('payment_method', 'cod'),
                 notes=input.get('notes'),
+                coupon=coupon,
                 sync_status=input.get('sync_status', 'pending'),
                 erpnext_sales_order_id=input.get('erpnext_sales_order_id'),
                 sync_error=input.get('sync_error'),
@@ -382,6 +464,10 @@ class CreateOrder(Mutation):
                     quantity=item_data['quantity'],
                     price=item_data['price']
                 )
+            
+            # Increment coupon usage if coupon was used
+            if coupon:
+                coupon.increment_usage(user=authenticated_user, order=order)
             
             return CreateOrder(
                 success=True,
@@ -614,6 +700,113 @@ class BulkCreateOrderItems(Mutation):
             )
 
 
+class CreatePayment(Mutation):
+    """Create a new payment record"""
+    
+    class Arguments:
+        input = PaymentInput(required=True)
+
+    success = Boolean()
+    message = String()
+    payment = Field(PaymentType)
+    errors = List(String)
+
+    def mutate(self, info, input):
+        try:
+            from api.models.order import Order, Payment
+            
+            # Get order
+            order = Order.objects.get(id=input['order_id'])
+            
+            # Create payment
+            payment = Payment.objects.create(
+                order=order,
+                amount=input.get('amount', order.total_amount),
+                method=input.get('method', order.payment_method),
+                status=input.get('status', 'pending'),
+                transaction_id=input.get('transaction_id'),
+                gateway_response=input.get('gateway_response', {})
+            )
+            
+            # Update order payment status if payment is successful
+            if payment.status == 'completed':
+                order.payment_status = True
+                order.save()
+            
+            return CreatePayment(
+                success=True,
+                message="Payment recorded successfully",
+                payment=payment
+            )
+            
+        except Order.DoesNotExist:
+            return CreatePayment(
+                success=False,
+                message="Order not found",
+                errors=["Order not found"]
+            )
+        except Exception as e:
+            return CreatePayment(
+                success=False,
+                message=str(e),
+                errors=[str(e)]
+            )
+
+
+class UpdatePaymentStatus(Mutation):
+    """Update payment status"""
+    
+    class Arguments:
+        payment_id = ID(required=True)
+        status = String(required=True)
+        transaction_id = String()
+        gateway_response = JSONString()
+
+    success = Boolean()
+    message = String()
+    payment = Field(PaymentType)
+    errors = List(String)
+
+    def mutate(self, info, payment_id, status, transaction_id=None, gateway_response=None):
+        try:
+            from api.models.order import Payment
+            
+            payment = Payment.objects.get(id=payment_id)
+            
+            # Update payment fields
+            payment.status = status
+            if transaction_id:
+                payment.transaction_id = transaction_id
+            if gateway_response:
+                payment.gateway_response = gateway_response
+            
+            payment.save()
+            
+            # Update order payment status if payment is successful
+            if status == 'completed':
+                payment.order.payment_status = True
+                payment.order.save()
+            
+            return UpdatePaymentStatus(
+                success=True,
+                message="Payment status updated successfully",
+                payment=payment
+            )
+            
+        except Payment.DoesNotExist:
+            return UpdatePaymentStatus(
+                success=False,
+                message="Payment not found",
+                errors=["Payment not found"]
+            )
+        except Exception as e:
+            return UpdatePaymentStatus(
+                success=False,
+                message=str(e),
+                errors=[str(e)]
+            )
+
+
 # Query Class
 class OrderQuery(ObjectType):
     """Order queries"""
@@ -729,3 +922,5 @@ class OrderMutation(ObjectType):
     update_order_status = UpdateOrderStatus.Field()
     cancel_order = CancelOrder.Field()
     bulk_create_order_items = BulkCreateOrderItems.Field()
+    create_payment = CreatePayment.Field()
+    update_payment_status = UpdatePaymentStatus.Field()

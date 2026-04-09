@@ -62,37 +62,17 @@ class ShippingType(DjangoObjectType):
 
 
 class ShippingMethodType(DjangoObjectType):
-    """Shipping method type"""
+    """Shipping method type matching api_shipping_method table"""
     id = graphene.ID(required=True)
     name = String()
-    provider = String()
-    service_type = String()
-    
-    # Delivery information
-    expected_delivery_time = Int()
-    delivery_days = List(String)
-    cutoff_time = String()
-    
-    # Branding and contact
-    logo = String()
-    description = String()
-    contact_phone = String()
-    contact_email = String()
-    
-    # Service level
+    provider_name = String()
+    base_cost = Float()
+    estimated_days = String()
     is_active = Boolean()
-    tracking_available = Boolean()
-    insurance_available = Boolean()
-    cod_available = Boolean()
+    description = String()
     
-    # Coverage and limits
-    coverage_wilayas = List(String)
-    max_weight = Float()
-    max_dimensions = JSONString()
-    
-    # API integration
-    tracking_url_template = String()
-    api_endpoint = String()
+    # Organization relationship
+    organization = Field(lambda: OrganizationType)
     
     created_at = DateTime()
     updated_at = DateTime()
@@ -103,11 +83,9 @@ class ShippingMethodType(DjangoObjectType):
         fields = '__all__'
         filter_fields = {
             'name': ['exact', 'icontains'],
-            'provider': ['exact'],
-            'service_type': ['exact'],
+            'provider_name': ['exact', 'icontains'],
             'is_active': ['exact'],
-            'cod_available': ['exact'],
-            'tracking_available': ['exact'],
+            'organization': ['exact'],
         }
 
 
@@ -186,33 +164,12 @@ class ShippingInput(graphene.InputObjectType):
 class ShippingMethodInput(graphene.InputObjectType):
     """Input for shipping method creation and updates"""
     name = String(required=True)
-    provider = String(required=True)
-    service_type = String(required=True)
-    expected_delivery_time = Int(required=True)
-    
-    # Delivery information
-    delivery_days = List(String)
-    cutoff_time = String()
-    
-    # Branding and contact
-    description = String()
-    contact_phone = String()
-    contact_email = String()
-    
-    # Service level
+    provider_name = String()
+    base_cost = Float(default_value=0.00)
+    estimated_days = String()
     is_active = Boolean(default_value=True)
-    tracking_available = Boolean(default_value=True)
-    insurance_available = Boolean(default_value=False)
-    cod_available = Boolean(default_value=True)
-    
-    # Coverage and limits
-    coverage_wilayas = List(String)
-    max_weight = Float()
-    max_dimensions = JSONString()
-    
-    # API integration
-    tracking_url_template = String()
-    api_endpoint = String()
+    description = String()
+    organization_id = ID(required=True)
 
 
 class ShippingPriceInput(graphene.InputObjectType):
@@ -332,7 +289,17 @@ class CreateShippingMethod(Mutation):
 
     def mutate(self, info, input):
         try:
-            shipping_method = ShippingMethod.objects.create(**input)
+            from api.models.organization import Organization
+            
+            # Get organization
+            organization = Organization.objects.get(id=input['organization_id'])
+            
+            # Create shipping method without organization_id from input
+            shipping_method_data = {k: v for k, v in input.items() if k != 'organization_id'}
+            shipping_method = ShippingMethod.objects.create(
+                organization=organization,
+                **shipping_method_data
+            )
             
             return CreateShippingMethod(
                 success=True,
@@ -340,6 +307,12 @@ class CreateShippingMethod(Mutation):
                 shipping_method=shipping_method
             )
             
+        except Organization.DoesNotExist:
+            return CreateShippingMethod(
+                success=False,
+                message="Organization not found",
+                errors=["Organization not found"]
+            )
         except Exception as e:
             return CreateShippingMethod(
                 success=False,
@@ -428,7 +401,6 @@ class CreateShippingPrice(Mutation):
             )
 
 
-# Query Class
 class ShippingQuery(ObjectType):
     """Shipping queries"""
     
@@ -439,6 +411,7 @@ class ShippingQuery(ObjectType):
     shipping_methods = List(ShippingMethodType)
     shipping_method = Field(ShippingMethodType, id=ID(required=True))
     shipping_methods_connection = DjangoFilterConnectionField(ShippingMethodType)
+    shipping_methods_by_organization = List(ShippingMethodType, organization_id=ID(required=True))
     
     shipping_prices = List(ShippingPriceType)
     shipping_price = Field(ShippingPriceType, id=ID(required=True))
@@ -457,14 +430,23 @@ class ShippingQuery(ObjectType):
     
     def resolve_shipping_methods(self, info):
         """Get all shipping methods"""
-        return ShippingMethod.objects.all()
+        return ShippingMethod.objects.select_related('organization').all()
     
     def resolve_shipping_method(self, info, id):
         """Get shipping method by ID"""
         try:
-            return ShippingMethod.objects.get(id=id)
+            return ShippingMethod.objects.select_related('organization').get(id=id)
         except ShippingMethod.DoesNotExist:
             return None
+    
+    def resolve_shipping_methods_by_organization(self, info, organization_id):
+        """Get shipping methods by organization_id"""
+        try:
+            from api.models.organization import Organization
+            organization = Organization.objects.get(id=organization_id)
+            return ShippingMethod.objects.filter(organization=organization, is_active=True)
+        except Organization.DoesNotExist:
+            return []
     
     def resolve_shipping_prices(self, info):
         """Get all shipping prices"""

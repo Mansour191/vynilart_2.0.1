@@ -575,6 +575,9 @@ class ContentQuery(ObjectType):
     featured_designs = List(DesignType)
     approved_designs = List(DesignType)
     
+    # ERPNext sync queries
+    sync_logs = List(ERPNextSyncLogNode, limit=Int(default=50), status=String())
+    
     def resolve_blog_categories(self, info):
         """Get all blog categories"""
         return BlogCategory.objects.filter(is_active=True)
@@ -638,6 +641,17 @@ class ContentQuery(ObjectType):
     def resolve_approved_designs(self, info):
         """Get approved designs"""
         return Design.objects.filter(status='approved', is_active=True, is_public=True)
+    
+    def resolve_sync_logs(self, info, limit=50, status=None):
+        """Get ERPNext sync logs with optional status filtering
+        Optimized for memory efficiency with limits and selective field loading
+        """
+        from api.utils.erpnext_helper import ERPNextSyncHelper
+        
+        # Validate limit to prevent memory issues
+        limit = min(max(limit, 1), 100)  # Ensure limit is between 1 and 100
+        
+        return ERPNextSyncHelper.get_recent_logs(limit=limit, status_filter=status)
 
 
 # Mutation Class

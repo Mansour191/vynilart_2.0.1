@@ -196,6 +196,78 @@
               </v-alert>
             </v-form>
 
+            <!-- Coupon Section -->
+            <v-form ref="couponForm" class="mb-6">
+              <h3 class="mb-4">كوبون الخصم</h3>
+              
+              <v-row>
+                <v-col cols="12" md="8">
+                  <v-text-field
+                    v-model="couponCode"
+                    label="رمز الكوبون"
+                    variant="outlined"
+                    placeholder="أدخل رمز الكوبون"
+                    :loading="isApplyingCoupon"
+                    :error-messages="couponError"
+                    @keyup.enter="applyCoupon"
+                  ></v-text-field>
+                </v-col>
+                <v-col cols="12" md="4">
+                  <v-btn
+                    variant="outlined"
+                    color="primary"
+                    block
+                    height="56"
+                    @click="applyCoupon"
+                    :loading="isApplyingCoupon"
+                    :disabled="!couponCode.trim()"
+                  >
+                    <v-icon start>mdi-ticket-percent</v-icon>
+                    تطبيق
+                  </v-btn>
+                </v-col>
+              </v-row>
+
+              <!-- Applied Coupon Info -->
+              <v-card
+                v-if="appliedCoupon"
+                variant="outlined"
+                color="success"
+                class="mt-3"
+              >
+                <v-card-text class="pa-3">
+                  <div class="d-flex align-center justify-space-between">
+                    <div class="d-flex align-center">
+                      <v-icon color="success" class="me-2">mdi-check-circle</v-icon>
+                      <div>
+                        <div class="font-weight-medium">{{ appliedCoupon.code }}</div>
+                        <div class="text-caption">{{ appliedCoupon.name || 'كوبون خصم' }}</div>
+                      </div>
+                    </div>
+                    <v-btn
+                      icon="mdi-close"
+                      size="small"
+                      variant="text"
+                      color="error"
+                      @click="removeCoupon"
+                    ></v-btn>
+                  </div>
+                </v-card-text>
+              </v-card>
+
+              <!-- Coupon Error -->
+              <v-alert
+                v-if="couponError"
+                type="error"
+                variant="tonal"
+                class="mt-3"
+                closable
+                @click:close="couponError = ''"
+              >
+                {{ couponError }}
+              </v-alert>
+            </v-form>
+
             <!-- Payment Method -->
             <v-form ref="paymentForm" v-model="paymentInfo" class="mb-6">
               <h3 class="mb-4">طريقة الدفع</h3>
@@ -282,6 +354,14 @@
                 </span>
               </div>
 
+              <!-- Coupon Discount -->
+              <div v-if="couponDiscount > 0" class="d-flex justify-space-between mb-2">
+                <span>خصم الكوبون:</span>
+                <span class="font-weight-medium success--text">
+                  -{{ formatCurrency(couponDiscount) }}
+                </span>
+              </div>
+
               <div class="d-flex justify-space-between mb-2">
                 <span>الشحن:</span>
                 <span class="font-weight-medium">
@@ -294,7 +374,7 @@
               <div class="d-flex justify-space-between">
                 <span class="text-h6 font-weight-bold">الإجمالي:</span>
                 <span class="text-h6 font-weight-bold primary--text">
-                  {{ formatCurrency(cartStore.totalBeforeShipping + shippingCost) }}
+                  {{ formatCurrency(cartStore.totalBeforeShipping + shippingCost - couponDiscount) }}
                 </span>
               </div>
 
@@ -383,6 +463,13 @@ const paymentInfo = ref({
 
 const orderNotes = ref('')
 const isPlacingOrder = ref(false)
+
+// Coupon related data
+const couponCode = ref('')
+const appliedCoupon = ref(null)
+const couponDiscount = ref(0)
+const isApplyingCoupon = ref(false)
+const couponError = ref('')
 
 // Computed
 const availableWilayas = computed(() => {
@@ -510,6 +597,92 @@ function calculateOrderVolume() {
   }, 0)
 }
 
+// Coupon methods
+async function applyCoupon() {
+  if (!couponCode.value.trim()) {
+    couponError.value = 'يرجى إدخال رمز الكوبون'
+    return
+  }
+
+  isApplyingCoupon.value = true
+  couponError.value = ''
+
+  try {
+    const response = await fetch('/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${getAuthToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `
+          query ValidateCoupon($code: String!, $orderValue: Float!) {
+            validateCoupon(code: $code, orderValue: $orderValue) {
+              success
+              message
+              coupon {
+                id
+                code
+                name
+                discountType
+                discountValue
+                maxDiscount
+                isActive
+                usedCount
+                usageLimit
+                usageLimitPerUser
+                minOrderValue
+                maxOrderValue
+                validFrom
+                validTo
+              }
+              discountAmount
+            }
+          }
+        `,
+        variables: {
+          code: couponCode.value.trim().toUpperCase(),
+          orderValue: cartStore.totalBeforeShipping
+        }
+      })
+    })
+
+    const result = await response.json()
+    
+    if (result.errors) {
+      throw new Error(result.errors[0].message)
+    }
+
+    const { validateCoupon } = result.data
+    
+    if (validateCoupon.success) {
+      appliedCoupon.value = validateCoupon.coupon
+      couponDiscount.value = validateCoupon.discountAmount
+      
+      toast({
+        title: '✅ تم تطبيق الكوبون',
+        text: `خصم ${formatCurrency(validateCoupon.discountAmount)} تم تطبيقه على طلبك`,
+        color: 'success',
+        timeout: 3000
+      })
+    } else {
+      couponError.value = validateCoupon.message
+    }
+  } catch (error) {
+    console.error('Error applying coupon:', error)
+    couponError.value = error.message || 'فشل تطبيق الكوبون'
+  } finally {
+    isApplyingCoupon.value = false
+  }
+}
+
+function removeCoupon() {
+  appliedCoupon.value = null
+  couponDiscount.value = 0
+  couponCode.value = ''
+  couponError.value = ''
+}
+
 async function placeOrder() {
   if (!canPlaceOrder.value) {
     toast({
@@ -530,8 +703,10 @@ async function placeOrder() {
       email: customerInfo.value.email,
       shipping_address: customerInfo.value.address,
       wilaya_id: shippingInfo.value.wilayaId,
+      shipping_method_id: selectedShippingMethod.value?.id,
       payment_method: paymentInfo.value.method,
       notes: orderNotes.value,
+      coupon_code: appliedCoupon.value ? appliedCoupon.value.code : null,
       items: cartStore.items.map(item => ({
         product_id: item.product.id,
         material_id: item.material?.id,

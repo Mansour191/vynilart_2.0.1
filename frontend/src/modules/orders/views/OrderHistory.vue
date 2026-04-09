@@ -141,6 +141,21 @@
                 </div>
               </div>
 
+              <!-- Payment Status -->
+              <div class="payment-status">
+                <div class="payment-info">
+                  <v-icon size="small" class="me-1">mdi-credit-card</v-icon>
+                  <span class="payment-method">{{ getPaymentMethodLabel(order.paymentMethod) }}</span>
+                </div>
+                <v-chip
+                  :color="getPaymentStatusColor(order.paymentStatus, order.payments)"
+                  size="small"
+                  variant="flat"
+                >
+                  {{ getPaymentStatusLabel(order.paymentStatus, order.payments) }}
+                </v-chip>
+              </div>
+
               <!-- Order Actions -->
               <div class="order-actions">
                 <v-btn
@@ -437,6 +452,57 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
+const getPaymentMethodLabel = (method) => {
+  const methodLabels = {
+    'cod': 'الدفع عند الاستلام',
+    'card': 'بطاقة ائتمانية',
+    'transfer': 'تحويل بنكي',
+    'ccp': 'CCP',
+    'edahabia': 'Edahabia',
+    'cib': 'CIB',
+    'wallet': 'محفظة إلكترونية'
+  };
+  return methodLabels[method] || method;
+};
+
+const getPaymentStatusLabel = (paymentStatus, payments) => {
+  // Check if there are any payments and get the latest status
+  if (payments && payments.length > 0) {
+    const latestPayment = payments[0]; // Assuming payments are ordered by creation date
+    const statusLabels = {
+      'pending': 'في الانتظار',
+      'processing': 'قيد المعالجة',
+      'completed': 'مكتمل',
+      'failed': 'فشل',
+      'cancelled': 'ملغي',
+      'refunded': 'مسترد'
+    };
+    return statusLabels[latestPayment.status] || latestPayment.status;
+  }
+  
+  // Fallback to order payment status
+  return paymentStatus ? 'مدفوع' : 'غير مدفوع';
+};
+
+const getPaymentStatusColor = (paymentStatus, payments) => {
+  // Check if there are any payments and get the latest status
+  if (payments && payments.length > 0) {
+    const latestPayment = payments[0];
+    const statusColors = {
+      'pending': 'warning',
+      'processing': 'info',
+      'completed': 'success',
+      'failed': 'error',
+      'cancelled': 'grey',
+      'refunded': 'orange'
+    };
+    return statusColors[latestPayment.status] || 'grey';
+  }
+  
+  // Fallback to order payment status
+  return paymentStatus ? 'success' : 'warning';
+};
+
 // Watch loading state
 loading.value = queryLoading.value;
 error.value = queryError.value;
@@ -589,6 +655,27 @@ onMounted(() => {
   font-weight: 600;
   color: var(--primary-color);
   font-size: 1rem;
+}
+
+.payment-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: var(--bg-surface);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.payment-info {
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.payment-method {
+  font-weight: 500;
 }
 
 .order-actions {

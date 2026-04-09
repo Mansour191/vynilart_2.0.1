@@ -13,11 +13,16 @@ class BehaviorTracking(models.Model):
     user = models.ForeignKey(
         'api.User', 
         on_delete=models.CASCADE,
-        db_column='user_id'
+        db_column='user_id',
+        null=True,
+        blank=True
     )
+    session_id = models.CharField(max_length=255, blank=True, null=True)
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
     action = models.CharField(max_length=100)
     target_type = models.CharField(max_length=50, blank=True, null=True)
     target_id = models.IntegerField(blank=True, null=True)
+    duration = models.IntegerField(default=0)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -25,6 +30,7 @@ class BehaviorTracking(models.Model):
         db_table = 'api_behaviortracking'
         indexes = [
             models.Index(fields=['user']),
+            models.Index(fields=['session_id']),
             models.Index(fields=['action']),
             models.Index(fields=['target_type']),
             models.Index(fields=['created_at']),
@@ -32,7 +38,9 @@ class BehaviorTracking(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.user.username} - {self.action}"
+        if self.user:
+            return f"{self.user.username} - {self.action}"
+        return f"Anonymous - {self.action}"
 
 
 class Forecast(models.Model):
@@ -48,6 +56,9 @@ class Forecast(models.Model):
     forecast_type = models.CharField(max_length=50)
     period = models.CharField(max_length=20)
     predicted_demand = models.IntegerField(blank=True, null=True)
+    actual_demand = models.IntegerField(blank=True, null=True)
+    error_margin = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    algorithm_used = models.CharField(max_length=100, blank=True, null=True)
     confidence = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -2,13 +2,13 @@
 Product Schema for VynilArt API
 """
 import graphene
-from graphene import relay, ObjectType, Field, List, String, Int, Float, Boolean, DateTime, ID, JSONString
+from graphene import relay, ObjectType, Field, List, String, Int, Float, Boolean, DateTime, ID, JSONString, Mutation
 from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 from django.db.models import Count, Avg, Q
 from decimal import Decimal
-from api.models.product import Category, Material, Product, ProductVariant, ProductMaterial
-from api.models.product_image import ProductImage
+from api.models.product import Category, Material, Product, ProductVariant, ProductMaterial, ProductImage
+from api.models.product_image import ProductImageEnhanced
 
 
 class CategoryType(DjangoObjectType):
@@ -573,7 +573,9 @@ class UpdateMaterialStock(Mutation):
                 message=str(e),
                 errors=[str(e)]
             )
-    class ProductImageInput(graphene.InputObjectType):
+
+
+class ProductImageInput(graphene.InputObjectType):
     """Input for product image uploads"""
     product_id = ID(required=True)
     alt_text = String()
@@ -588,7 +590,7 @@ class BulkUploadImages(Mutation):
         product_id = ID(required=True)
         images = List(String, required=True)  # Base64 encoded images
         alt_texts = List(String)  # Optional alt texts
-        set_featured = Boolean(default=False)  # Set first image as featured
+        set_featured = Boolean()  # Set first image as featured
 
     success = Boolean()
     message = String()
@@ -692,24 +694,25 @@ class AddProductMaterial(Mutation):
     """Add material to product"""
     
     class Arguments:
-        input = ProductMaterialInput(required=True)
+        product_id = ID(required=True)
+        material_id = ID(required=True)
 
     success = Boolean()
     message = String()
     product_material = Field(ProductMaterialType)
     errors = List(String)
 
-    def mutate(self, info, input):
+    def mutate(self, info, product_id, material_id):
         try:
-            product = Product.objects.get(id=input['product_id'])
-            material = Material.objects.get(id=input['material_id'])
+            product = Product.objects.get(id=product_id)
+            material = Material.objects.get(id=material_id)
             
             product_material = ProductMaterial.objects.create(
                 product=product,
                 material=material,
-                quantity_used=input['quantity_used'],
-                unit=input.get('unit', 'kg'),
-                is_active=input.get('is_active', True)
+                quantity_used=1.0,
+                unit='kg',
+                is_active=True
             )
             
             # Update product's final cost
@@ -942,9 +945,9 @@ class ProductMutation(ObjectType):
 
 # Node Classes from core/schema.py
 class CategoryNode(DjangoObjectType):
-    """Product category node with tree structure"""
+    """Relay Node for Category"""
     class Meta:
-        model = models.Category
+        model = Category
         interfaces = (relay.Node,)
         fields = '__all__'
         filter_fields = {
@@ -961,7 +964,7 @@ class CategoryNode(DjangoObjectType):
     
     def resolve_children(self, info):
         """Get direct children of this category"""
-        return models.Category.objects.filter(parent=self, is_active=True)
+        return Category.objects.filter(parent=self, is_active=True)
     
     def resolve_level(self, info):
         """Calculate level of this category in tree"""
@@ -976,7 +979,7 @@ class CategoryNode(DjangoObjectType):
 class MaterialNode(DjangoObjectType):
     """Material node with enhanced filtering"""
     class Meta:
-        model = models.Material
+        model = Material
         interfaces = (relay.Node,)
         fields = '__all__'
         filter_fields = {
@@ -995,7 +998,7 @@ class ProductNode(DjangoObjectType):
     category = Field('CategoryNode')
     
     class Meta:
-        model = models.Product
+        model = Product
         interfaces = (relay.Node,)
         fields = '__all__'
         filter_fields = {
@@ -1014,7 +1017,7 @@ class ProductNode(DjangoObjectType):
 class ProductImageNode(DjangoObjectType):
     """Product image node"""
     class Meta:
-        model = models.ProductImage
+        model = ProductImage
         interfaces = (relay.Node,)
         fields = '__all__'
 
@@ -1022,7 +1025,7 @@ class ProductImageNode(DjangoObjectType):
 class ProductVariantNode(DjangoObjectType):
     """Product variant node"""
     class Meta:
-        model = models.ProductVariant
+        model = ProductVariant
         interfaces = (relay.Node,)
         fields = '__all__'
 
@@ -1032,7 +1035,7 @@ class ProductMaterialNode(DjangoObjectType):
     material = Field('MaterialNode')
     
     class Meta:
-        model = models.ProductMaterial
+        model = ProductMaterial
         interfaces = (relay.Node,)
         fields = '__all__'
         filter_fields = {
