@@ -81,30 +81,13 @@ class CustomerSegmentType(DjangoObjectType):
     id = graphene.ID(required=True)
     name = String()
     description = String()
-    segment_type = String()
     
     # Segment criteria
     criteria = JSONString()
     
-    # Segment characteristics
-    size = Int()
-    percentage = Float()
-    
-    # Performance metrics
-    avg_order_value = Float()
-    order_frequency = Float()
-    lifetime_value = Float()
-    churn_rate = Float()
-    
-    # Marketing effectiveness
-    conversion_rate = Float()
-    engagement_rate = Float()
-    response_rate = Float()
-    
-    # Status and lifecycle
+    # Status and priority
     is_active = Boolean()
-    auto_update = Boolean()
-    last_updated = DateTime()
+    priority = Int()
     
     created_at = DateTime()
     updated_at = DateTime()
@@ -114,10 +97,8 @@ class CustomerSegmentType(DjangoObjectType):
         interfaces = (relay.Node,)
         fields = '__all__'
         filter_fields = {
-            'segment_type': ['exact'],
             'is_active': ['exact'],
-            'size': ['exact', 'lt', 'lte', 'gt', 'gte'],
-            'percentage': ['exact', 'lt', 'lte', 'gt', 'gte'],
+            'priority': ['exact', 'lt', 'lte', 'gt', 'gte'],
         }
 
 
@@ -244,23 +225,11 @@ class CustomerSegmentInput(graphene.InputObjectType):
     """Input for customer segment creation and updates"""
     name = String(required=True)
     description = String()
-    segment_type = String(required=True)
-    criteria = JSONString(required=True)
+    criteria = JSONString()
     
-    # Performance metrics
-    avg_order_value = Float()
-    order_frequency = Float()
-    lifetime_value = Float()
-    churn_rate = Float()
-    
-    # Marketing effectiveness
-    conversion_rate = Float()
-    engagement_rate = Float()
-    response_rate = Float()
-    
-    # Status and lifecycle
+    # Status and priority
     is_active = Boolean(default_value=True)
-    auto_update = Boolean(default_value=False)
+    priority = Int(default_value=0)
 
 
 class PricingEngineInput(graphene.InputObjectType):
@@ -340,7 +309,9 @@ class TrackUserAction(BaseMutation):
 
     def mutate(self, info, input):
         try:
-            from api.models.analytics_new import BehaviorTracking
+            from api.models.analytics_new import (
+                BehaviorTracking, Forecast, CustomerSegment, CustomerSegmentUser, PricingEngine
+            )
             from django.contrib.auth.models import AnonymousUser
             import uuid
             
@@ -509,7 +480,7 @@ class CreateCustomerSegment(Mutation):
 
     def mutate(self, info, input):
         try:
-            from api.models.analytics import CustomerSegment
+            from api.models.analytics_new import CustomerSegment
             
             user = info.context.user
             
@@ -522,9 +493,6 @@ class CreateCustomerSegment(Mutation):
             
             segment = CustomerSegment.objects.create(**input)
             
-            # Calculate segment size
-            segment.calculate_size()
-            
             return CreateCustomerSegment(
                 success=True,
                 message="Customer segment created successfully",
@@ -533,6 +501,60 @@ class CreateCustomerSegment(Mutation):
             
         except Exception as e:
             return CreateCustomerSegment(
+                success=False,
+                message=str(e),
+                errors=[str(e)]
+            )
+
+
+class UpdateCustomerSegment(Mutation):
+    """Update an existing customer segment"""
+    
+    class Arguments:
+        id = ID(required=True)
+        input = CustomerSegmentInput(required=True)
+
+    success = Boolean()
+    message = String()
+    segment = Field(CustomerSegmentType)
+    errors = List(String)
+
+    def mutate(self, info, id, input):
+        try:
+            from api.models.analytics_new import CustomerSegment
+            
+            user = info.context.user
+            
+            if not user.is_authenticated or not user.is_staff:
+                return UpdateCustomerSegment(
+                    success=False,
+                    message="Admin authentication required",
+                    errors=["Admin authentication required"]
+                )
+            
+            segment = CustomerSegment.objects.get(id=id)
+            
+            # Update fields
+            for field, value in input.items():
+                if hasattr(segment, field):
+                    setattr(segment, field, value)
+            
+            segment.save()
+            
+            return UpdateCustomerSegment(
+                success=True,
+                message="Customer segment updated successfully",
+                segment=segment
+            )
+            
+        except CustomerSegment.DoesNotExist:
+            return UpdateCustomerSegment(
+                success=False,
+                message="Customer segment not found",
+                errors=["Customer segment not found"]
+            )
+        except Exception as e:
+            return UpdateCustomerSegment(
                 success=False,
                 message=str(e),
                 errors=[str(e)]
@@ -704,4 +726,5 @@ class AnalyticsMutation(ObjectType):
     create_forecast = CreateForecast.Field()
     update_forecast = UpdateForecast.Field()
     create_customer_segment = CreateCustomerSegment.Field()
+    update_customer_segment = UpdateCustomerSegment.Field()
     update_dashboard_settings = UpdateDashboardSettings.Field()

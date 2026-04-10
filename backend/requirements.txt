@@ -28,8 +28,7 @@ six==1.17.0
 text-unidecode==1.3
 typing_extensions==4.15.0
 
-# MySQL Support
-mysqlclient==2.2.8
+# SQLite Support (built into Django, no additional package needed)
 
 # WebSockets Support (إذا كنت تحتاجها)
 channels==3.0.4

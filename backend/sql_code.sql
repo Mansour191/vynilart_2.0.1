@@ -562,8 +562,12 @@ CREATE TABLE IF NOT EXISTS api_customersegment (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     criteria JSON,
+    is_active TINYINT(1) DEFAULT 1,
+    priority INT DEFAULT 0,
     created_at DATETIME(6) NOT NULL,
-    updated_at DATETIME(6) NOT NULL
+    updated_at DATETIME(6) NOT NULL,
+    INDEX api_customersegment_is_active_idx (is_active),
+    INDEX api_customersegment_priority_idx (priority)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Customer Segment Users (many-to-many)
@@ -811,7 +815,20 @@ CREATE TABLE IF NOT EXISTS api_social (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
--- 19. VERIFICATION QUERIES
+-- 19. ALTER TABLE COMMANDS FOR EXISTING TABLES
+-- ============================================
+
+-- Add new fields to existing api_customersegment table
+ALTER TABLE api_customersegment 
+ADD COLUMN is_active TINYINT(1) DEFAULT 1,
+ADD COLUMN priority INT DEFAULT 0;
+
+-- Add indexes for new fields
+CREATE INDEX api_customersegment_is_active_idx ON api_customersegment(is_active);
+CREATE INDEX api_customersegment_priority_idx ON api_customersegment(priority);
+
+-- ============================================
+-- 20. VERIFICATION QUERIES
 -- ============================================
 
 -- Check all tables created

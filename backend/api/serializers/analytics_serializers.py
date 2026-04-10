@@ -3,8 +3,8 @@ Analytics Serializers for VynilArt API
 Note: This project uses GraphQL only, but serializers are kept for compatibility
 """
 from rest_framework import serializers
-from api.models.analytics import (
-    Forecast, CustomerSegment, PricingEngine, DashboardSettings
+from api.models.analytics_new import (
+    BehaviorTracking, Forecast, CustomerSegment, CustomerSegmentUser, PricingEngine
 )
 
 
@@ -40,11 +40,7 @@ class CustomerSegmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerSegment
         fields = [
-            'id', 'name', 'description', 'segment_type', 'criteria',
-            'size', 'percentage', 'avg_order_value',
-            'order_frequency', 'lifetime_value', 'churn_rate',
-            'conversion_rate', 'engagement_rate', 'response_rate',
-            'is_active', 'auto_update', 'last_updated',
+            'id', 'name', 'description', 'criteria', 'is_active', 'priority',
             'created_at', 'updated_at', 'user_count'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -53,7 +49,7 @@ class CustomerSegmentSerializer(serializers.ModelSerializer):
         """Get actual user count in segment"""
         # This would implement the actual filtering logic
         # based on the criteria JSON
-        return obj.size  # Placeholder
+        return CustomerSegmentUser.objects.filter(customersegment=obj).count()
 
 
 class PricingEngineSerializer(serializers.ModelSerializer):
@@ -131,17 +127,12 @@ class CustomerSegmentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerSegment
         fields = [
-            'name', 'description', 'segment_type', 'criteria',
-            'avg_order_value', 'order_frequency', 'lifetime_value',
-            'churn_rate', 'conversion_rate', 'engagement_rate',
-            'response_rate', 'is_active', 'auto_update'
+            'name', 'description', 'criteria', 'is_active', 'priority'
         ]
     
     def create(self, validated_data):
         """Create customer segment"""
-        segment = CustomerSegment.objects.create(**validated_data)
-        segment.calculate_size()
-        return segment
+        return CustomerSegment.objects.create(**validated_data)
 
 
 class PricingEngineUpdateSerializer(serializers.ModelSerializer):

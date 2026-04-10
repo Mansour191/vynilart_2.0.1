@@ -84,6 +84,8 @@ class CustomerSegment(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     criteria = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
+    priority = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -92,8 +94,10 @@ class CustomerSegment(models.Model):
         indexes = [
             models.Index(fields=['name']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['is_active']),
+            models.Index(fields=['priority']),
         ]
-        ordering = ['name']
+        ordering = ['-priority', 'name']
 
     def __str__(self):
         return self.name
